@@ -1,0 +1,9 @@
+idf_component_register(
+    SRCS 
+        "qmi8658a.c"
+    INCLUDE_DIRS 
+        "."
+    REQUIRES
+        driver
+        log
+)

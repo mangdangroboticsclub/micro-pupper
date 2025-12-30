@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MicroPupper Gait Animator</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header>
+            <h1>🐕 MicroPupper Gait Animator</h1>
+            <div class="connection-status" id="connection-status">
+                <span class="status-dot disconnected"></span>
+                <span id="status-text">Disconnected</span>
+            </div>
+        </header>
+
+        <!-- Connection Controls -->
+        <section class="panel" id="connection-panel">
+            <button id="connect-btn" class="btn btn-primary btn-large">
+                🔗 Connect to MicroPupper
+            </button>
+            <button id="disconnect-btn" class="btn btn-secondary" disabled>
+                ❌ Disconnect
+            </button>
+        </section>
+
+        <!-- Quick Controls -->
+        <section class="panel" id="quick-controls">
+            <h2>Quick Controls</h2>
+            <div class="button-row">
+                <button id="stance-btn" class="btn btn-success">🧍 Stance</button>
+                <button id="ping-btn" class="btn btn-info">📡 Ping</button>
+            </div>
+        </section>
+
+        <!-- Servo Control Sliders -->
+        <section class="panel" id="servo-panel">
+            <h2>Servo Positions</h2>
+            
+            <!-- Keyframe Mode Toggle -->
+            <div class="mode-toggle">
+                <label class="toggle-label">Keyframe Mode:</label>
+                <div class="toggle-buttons">
+                    <button id="mode-unified-btn" class="mode-btn active" onclick="setKeyframeMode('unified')">
+                        🔗 Unified (All legs same timing)
+                    </button>
+                    <button id="mode-offset-btn" class="mode-btn" onclick="setKeyframeMode('offset')">
+                        🦿 Offset Gait (Staggered diagonal)
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Offset Gait Settings (shown in offset mode) -->
+            <div class="offset-settings" id="offset-settings" style="display: none;">
+                <div class="offset-header">
+                    <span class="offset-title">Leg Start Offsets (ms)</span>
+                    <span class="offset-hint">Diagonal pairs: FL+BR (Pair 1), FR+BL (Pair 2)</span>
+                </div>
+                <div class="offset-grid">
+                    <div class="offset-input">
+                        <label>FL</label>
+                        <input type="number" id="offset-fl" min="0" max="2000" value="0">
+                    </div>
+                    <div class="offset-input">
+                        <label>BR</label>
+                        <input type="number" id="offset-br" min="0" max="2000" value="0">
+                    </div>
+                    <div class="offset-input">
+                        <label>FR</label>
+                        <input type="number" id="offset-fr" min="0" max="2000" value="100">
+                    </div>
+                    <div class="offset-input">
+                        <label>BL</label>
+                        <input type="number" id="offset-bl" min="0" max="2000" value="100">
+                    </div>
+                </div>
+                <div class="offset-presets">
+                    <span>Presets:</span>
+                    <button class="btn btn-secondary btn-small" onclick="applyOffsetPreset('diagonal')">Diagonal (100ms)</button>
+                    <button class="btn btn-secondary btn-small" onclick="applyOffsetPreset('staggered')">Staggered (30ms)</button>
+                    <button class="btn btn-secondary btn-small" onclick="applyOffsetPreset('wave')">Wave</button>
+                </div>
+            </div>
+            
+            <div class="servo-grid">
+                <!-- Front Left -->
+                <div class="servo-control" data-leg="fl">
+                    <label for="fl-slider">Front Left (FL)</label>
+                    <input type="range" id="fl-slider" min="0" max="360" value="90">
+                    <input type="number" id="fl-value" min="0" max="360" value="90">
+                </div>
+                <!-- Front Right -->
+                <div class="servo-control" data-leg="fr">
+                    <label for="fr-slider">Front Right (FR)</label>
+                    <input type="range" id="fr-slider" min="0" max="360" value="90">
+                    <input type="number" id="fr-value" min="0" max="360" value="90">
+                </div>
+                <!-- Back Left -->
+                <div class="servo-control" data-leg="bl">
+                    <label for="bl-slider">Back Left (BL)</label>
+                    <input type="range" id="bl-slider" min="0" max="360" value="270">
+                    <input type="number" id="bl-value" min="0" max="360" value="270">
+                </div>
+                <!-- Back Right -->
+                <div class="servo-control" data-leg="br">
+                    <label for="br-slider">Back Right (BR)</label>
+                    <input type="range" id="br-slider" min="0" max="360" value="270">
+                    <input type="number" id="br-value" min="0" max="360" value="270">
+                </div>
+            </div>
+            
+            <!-- Speed and Step Duration -->
+            <div class="control-row" id="unified-timing">
+                <div class="control-group">
+                    <label for="speed-input">Speed (0-4095)</label>
+                    <input type="number" id="speed-input" min="0" max="4095" value="1000">
+                </div>
+                <div class="control-group">
+                    <label for="delay-input" id="delay-label">Delay (ms)</label>
+                    <input type="number" id="delay-input" min="0" max="2000" value="200">
+                </div>
+            </div>
+            
+            <div class="button-row">
+                <button id="send-btn" class="btn btn-primary">📤 Send Position</button>
+                <button id="add-keyframe-btn" class="btn btn-success">➕ Add Keyframe</button>
+            </div>
+        </section>
+
+        <!-- Animation Timeline -->
+        <section class="panel" id="animation-panel">
+            <h2>Animation Timeline</h2>
+            
+            <!-- Timing Visualization Bar -->
+            <div class="timing-bar-container">
+                <div class="timing-bar" id="timing-bar">
+                    <!-- Keyframe segments will be rendered here -->
+                </div>
+                <div class="timing-labels" id="timing-labels">
+                    <span>0ms</span>
+                    <span id="total-time">0ms</span>
+                </div>
+            </div>
+            
+            <div class="timeline-controls">
+                <button id="play-btn" class="btn btn-success">▶️ Play Queue</button>
+                <div class="cycle-control">
+                    <label for="cycle-count">Cycles:</label>
+                    <input type="number" id="cycle-count" min="1" max="100" value="1">
+                </div>
+                <button id="clear-btn" class="btn btn-danger">🗑️ Clear</button>
+            </div>
+            
+            <div class="timeline" id="timeline">
+                <!-- Keyframes will be added here dynamically -->
+                <div class="empty-message">No keyframes yet. Add positions above!</div>
+            </div>
+            
+            <div class="save-load">
+                <input type="text" id="animation-name" placeholder="Animation name...">
+                <button id="save-btn" class="btn btn-secondary">💾 Save</button>
+                <button id="add-btn" class="btn btn-secondary">➕ Add</button>
+            </div>
+        </section>
+
+        <!-- Saved Animations -->
+        <section class="panel" id="saved-panel">
+            <h2>Saved Animations</h2>
+            
+            <!-- Import/Export Controls -->
+            <div class="import-export-controls">
+                <div class="button-row">
+                    <button id="import-single-btn" class="btn btn-primary">📥 Import</button>
+                    <button id="import-batch-btn" class="btn btn-primary">📥 Import Multiple</button>
+                    <button id="export-all-btn" class="btn btn-secondary">📤 Export All</button>
+                    <button id="export-selected-btn" class="btn btn-secondary" disabled>📤 Export Selected</button>
+                </div>
+                <input type="file" id="import-file-input" accept=".json" style="display: none;" />
+                <input type="file" id="import-batch-input" accept=".json" multiple style="display: none;" />
+            </div>
+            
+            <div class="saved-list" id="saved-list">
+                <div class="empty-message">No saved animations</div>
+            </div>
+        </section>
+
+        <!-- Log Output -->
+        <section class="panel" id="log-panel">
+            <h2>Log</h2>
+            <div class="log" id="log"></div>
+        </section>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
