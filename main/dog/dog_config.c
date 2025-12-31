@@ -101,7 +101,7 @@ bool dog_init(const dog_config_t *config)
     vTaskDelay(pdMS_TO_TICKS(100));
     
     // Go to stance position
-    dog_goto_stance();
+    dog_goto_stance_smooth();
     vTaskDelay(pdMS_TO_TICKS(500));
     
     s_initialized = true;

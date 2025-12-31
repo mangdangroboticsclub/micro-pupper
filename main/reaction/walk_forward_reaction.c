@@ -73,5 +73,5 @@ void walk_forward_play(uint8_t cycles)
     
     // Return to stance position after animation completes
     ESP_LOGI(TAG, "Animation complete, returning to stance");
-    dog_goto_stance();
+    dog_goto_stance_smooth();
 }

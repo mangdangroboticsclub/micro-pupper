@@ -127,7 +127,7 @@ static void on_stance(void) {
     if (crawl_gait_is_running()) {
         crawl_gait_stop();
     }
-    dog_goto_stance();
+    dog_goto_stance_smooth();
 }
 
 /**
@@ -140,7 +140,7 @@ static void on_connect(bool connected) {
         if (crawl_gait_is_running()) {
             crawl_gait_stop();
         }
-        dog_goto_stance();
+        dog_goto_stance_smooth();
     } else {
         ESP_LOGI(TAG, "=== BLE Client Disconnected ===");
     }
