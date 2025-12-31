@@ -27,7 +27,26 @@ float sts_position_to_angle(uint16_t position) {
 // ═══════════════════════════════════════════════════════
 // BASIC SERVO FUNCTIONS
 // ═══════════════════════════════════════════════════════
-
+bool sts_servo_get_load(uint8_t id, int16_t *load)
+{
+    if (!load) {
+        ESP_LOGE(TAG, "Load pointer is NULL");
+        return false;
+    }
+    
+    uint8_t response[8];
+    
+    // Read from register 0x28 (Present Load, 2 bytes)
+    if (!sts_read_register(id, 0x28, 2, response)) {
+        ESP_LOGW(TAG, "Failed to read load from servo %d", id);
+        return false;
+    }
+    
+    // Combine bytes (little-endian)
+    *load = (int16_t)(response[0] | (response[1] << 8));
+    
+    return true;
+}
 bool sts_servo_ping(uint8_t id) {
     sts_send_packet(id, STS_PING, NULL, 0);
     

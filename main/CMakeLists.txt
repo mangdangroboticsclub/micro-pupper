@@ -16,6 +16,7 @@ idf_component_register(
         "ble/ble_servo.c"
         # Optional local utilities
         "util/sts3032_config.c"
+        "servo/servo_pressure.c"
         
         # Optional: Uncomment to include additional examples
         # "examples/example_modes.c"
@@ -28,6 +29,7 @@ idf_component_register(
         "util"
         "examples"
         "ble"
+        "servo"
     
     REQUIRES
         sts3032

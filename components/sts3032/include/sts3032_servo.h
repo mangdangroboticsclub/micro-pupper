@@ -59,5 +59,6 @@ bool sts_servo_get_speed(uint8_t id, uint16_t *speed);
 bool sts_servo_change_id(uint8_t old_id, uint8_t new_id);
 bool sts_servo_read_id(uint8_t query_id, uint8_t *current_id);
 void sts_servo_broadcast_reset_id(void);
+bool sts_servo_get_load(uint8_t id, int16_t *load);
 
 #endif // STS3032_SERVO_H
