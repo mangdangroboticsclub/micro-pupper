@@ -10,9 +10,11 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "cJSON.h"
+#include "esp_mac.h"
 #include <string.h>
 
 static const char* TAG = "BLE_SERVO";
+static char s_device_name[BLE_SERVO_DEVICE_NAME_MAX_LEN];
 
 #if CONFIG_BT_NIMBLE_ENABLED
 
@@ -48,6 +50,32 @@ static char s_chunk_buffer[CHUNK_BUFFER_SIZE];
 static size_t s_chunk_len = 0;
 static uint8_t s_chunk_expected = 0;
 static uint8_t s_chunk_received = 0;
+
+/**
+ * @brief Generate unique device name based on MAC address
+ * Creates name like "MicroPupper_A1B2C3" using last 3 bytes of MAC as hex
+ * This guarantees uniqueness since MAC addresses are globally unique
+ */
+static void generate_device_name(void) {
+    uint8_t mac[6];
+    esp_err_t err = esp_read_mac(mac, ESP_MAC_BT);
+    
+    if (err == ESP_OK) {
+        // Use last 3 bytes of MAC address as hex string for guaranteed uniqueness
+        // Format: MicroPupper_XXYYZZ where XX, YY, ZZ are the last 3 MAC bytes
+        snprintf(s_device_name, BLE_SERVO_DEVICE_NAME_MAX_LEN, 
+                 "%s_%02X%02X%02X", BLE_SERVO_DEVICE_NAME_BASE, 
+                 mac[3], mac[4], mac[5]);
+        
+        ESP_LOGI(TAG, "Generated device name: %s (MAC: %02X:%02X:%02X:%02X:%02X:%02X)",
+                 s_device_name, mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    } else {
+        // Fallback to base name if MAC read fails
+        snprintf(s_device_name, BLE_SERVO_DEVICE_NAME_MAX_LEN, 
+                 "%s_000000", BLE_SERVO_DEVICE_NAME_BASE);
+        ESP_LOGW(TAG, "Failed to read MAC address, using default name: %s", s_device_name);
+    }
+}
 
 // Callbacks
 static ble_servo_move_cb_t s_move_cb = NULL;
@@ -641,11 +669,13 @@ bool ble_servo_init(ble_servo_move_cb_t move_cb,
     ble_gatts_count_cfg(gatt_svcs);
     ble_gatts_add_svcs(gatt_svcs);
     
-    ble_svc_gap_device_name_set(BLE_SERVO_DEVICE_NAME);
+    // Generate unique device name based on MAC address
+    generate_device_name();
+    ble_svc_gap_device_name_set(s_device_name);
     
     nimble_port_freertos_init(host_task);
     
-    ESP_LOGI(TAG, "BLE ready - device: %s", BLE_SERVO_DEVICE_NAME);
+    ESP_LOGI(TAG, "BLE ready - device: %s", s_device_name);
     return true;
 }
 

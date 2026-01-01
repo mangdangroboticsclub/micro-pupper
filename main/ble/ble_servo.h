@@ -29,7 +29,8 @@ extern "C" {
 // CONFIGURATION
 // ═══════════════════════════════════════════════════════
 
-#define BLE_SERVO_DEVICE_NAME   "MicroPupper"
+#define BLE_SERVO_DEVICE_NAME_BASE   "MicroPupper"
+#define BLE_SERVO_DEVICE_NAME_MAX_LEN 32
 
 // ═══════════════════════════════════════════════════════
 // CALLBACKS
