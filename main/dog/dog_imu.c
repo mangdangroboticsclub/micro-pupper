@@ -105,7 +105,7 @@ static void imu_task(void *pvParameters)
             }
         }
         
-        vTaskDelay(pdMS_TO_TICKS(50));  // Read at 20Hz
+        vTaskDelay(pdMS_TO_TICKS(20));  // Read at 20Hz
     }
 }
 

@@ -16,7 +16,7 @@ static const char *TAG = "SERVO_PRESSURE";
 // ═══════════════════════════════════════════════════════
 
 #define POSITION_ERROR_THRESHOLD  0.2f  // Degrees of error indicates pressure
-#define PRESSURE_SAMPLES          2     // Number of consecutive samples needed
+#define PRESSURE_SAMPLES          1     // Number of consecutive samples needed
 
 // ═══════════════════════════════════════════════════════
 // TARGET POSITIONS (From LEFT-side perspective)

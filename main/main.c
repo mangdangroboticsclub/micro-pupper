@@ -1,8 +1,3 @@
-/**
- * @file main.c
- * @brief Robot Control with Servo Pressure Detection
- */
-
 #include <stdio.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -12,8 +7,8 @@
 // Dog configuration (pins, servo IDs, angle reversal)
 #include "dog_config.h"
 
-// Servo pressure detection
-#include "servo/servo_pressure.h"
+// Reaction system (pressure + IMU)
+#include "reaction/reaction_config.h"
 
 // Minimal BLE servo control
 #include "ble/ble_servo.h"
@@ -23,6 +18,16 @@
 #include "crawl_gait.h"
 
 static const char *TAG = "ROBOT_MAIN";
+
+// ═══════════════════════════════════════════════════════
+// MODE SELECTION
+// ═══════════════════════════════════════════════════════
+
+#define MODE_BLE        0   // BLE control mode
+#define MODE_DEMO       1   // Crawl gait demo
+#define MODE_REACTION   2   // Pressure + IMU reaction mode
+
+#define RUN_MODE  MODE_REACTION   // <-- Change this to select mode
 
 // ═══════════════════════════════════════════════════════
 // BLE SERVO CALLBACKS
@@ -110,34 +115,8 @@ static void on_connect(bool connected) {
 }
 
 // ═══════════════════════════════════════════════════════
-// PRESSURE TEST MODE
+// DEMO MODE
 // ═══════════════════════════════════════════════════════
-
-static void servo_pressure_test(void)
-{
-    ESP_LOGI(TAG, "");
-    ESP_LOGI(TAG, "╔═══════════════════════════════════════╗");
-    ESP_LOGI(TAG, "║   Servo Pressure Detection Test       ║");
-    ESP_LOGI(TAG, "║   Push on robot legs to see feedback  ║");
-    ESP_LOGI(TAG, "╚═══════════════════════════════════════╝");
-    ESP_LOGI(TAG, "");
-    
-    servo_pressure_init();
-    
-    while (1) {
-        // Update pressure readings (logs internally when changes detected)
-        servo_pressure_update();
-        
-        vTaskDelay(pdMS_TO_TICKS(100));  // Check at 10Hz
-    }
-}
-
-// ═══════════════════════════════════════════════════════
-// DEMO MODE (Optional)
-// ═══════════════════════════════════════════════════════
-
-#define RUN_DEMO_MODE 0         // Set to 1 to run crawl demo
-#define RUN_PRESSURE_TEST 1     // Set to 1 to run pressure test
 
 static void run_demo_mode(void) {
     ESP_LOGI(TAG, "Running Demo Mode");
@@ -203,15 +182,57 @@ void app_main(void)
     dog_goto_stance();
     vTaskDelay(pdMS_TO_TICKS(1000));
     
-    // Initialize IMU with smart logging
-    if (dog_imu_init()) {
+    // Initialize IMU
+    bool imu_ok = dog_imu_init();
+    if (imu_ok) {
         dog_imu_task_start();
-        ESP_LOGI(TAG, "IMU initialized with smart logging");
+        ESP_LOGI(TAG, "IMU initialized");
     } else {
-        ESP_LOGW(TAG, "IMU initialization failed, continuing without IMU");
+        ESP_LOGW(TAG, "IMU initialization failed");
     }
     
-    // Initialize crawl gait
+    // ═══════════════════════════════════════════════════════
+    // MODE SELECTION
+    // ═══════════════════════════════════════════════════════
+    
+#if RUN_MODE == MODE_REACTION
+    // ───────────────────────────────────────────────────────
+    // Reaction Mode: Pressure + IMU triggers walking
+    // ───────────────────────────────────────────────────────
+    ESP_LOGI(TAG, "");
+    ESP_LOGI(TAG, "╔═══════════════════════════════════════╗");
+    ESP_LOGI(TAG, "║   Pressure + IMU Reaction Mode        ║");
+    ESP_LOGI(TAG, "║                                       ║");
+    ESP_LOGI(TAG, "║   Light push (pressure) → 1 cycle     ║");
+    ESP_LOGI(TAG, "║   Hard push (pressure+IMU) → 3 cycles ║");
+    ESP_LOGI(TAG, "╚═══════════════════════════════════════╝");
+    ESP_LOGI(TAG, "");
+    
+    // Initialize reaction system
+    reaction_init();
+    
+    // Create pressure detection task (100Hz polling)
+    xTaskCreate(reaction_pressure_task, "pressure", 4096, NULL, 5, NULL);
+    ESP_LOGI(TAG, "Pressure task created (100Hz)");
+    
+    // The IMU reaction runs via the IMU task callback
+    // Keep main task alive
+    while (1) {
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+    
+#elif RUN_MODE == MODE_DEMO
+    // ───────────────────────────────────────────────────────
+    // Demo Mode
+    // ───────────────────────────────────────────────────────
+    run_demo_mode();
+    
+#else
+    // ───────────────────────────────────────────────────────
+    // BLE Mode
+    // ───────────────────────────────────────────────────────
+    
+    // Initialize crawl gait (for BLE commands)
     crawl_gait_config_t crawl_config = {
         .stance_angle_fr = DOG_STANCE_FRONT,
         .stance_angle_fl = DOG_STANCE_FRONT,
@@ -222,24 +243,6 @@ void app_main(void)
         .servo_speed = DOG_SPEED_VERY_FAST,
     };
     crawl_gait_init(&crawl_config);
-    ESP_LOGI(TAG, "Crawl gait initialized");
-    
-#if RUN_PRESSURE_TEST
-    // ───────────────────────────────────────────────────────
-    // Pressure Test Mode
-    // ───────────────────────────────────────────────────────
-    servo_pressure_test();
-    
-#elif RUN_DEMO_MODE
-    // ───────────────────────────────────────────────────────
-    // Demo Mode
-    // ───────────────────────────────────────────────────────
-    run_demo_mode();
-    
-#else
-    // ───────────────────────────────────────────────────────
-    // BLE Mode
-    // ───────────────────────────────────────────────────────
     
     if (!ble_servo_init(on_servo_move, on_leg_move, on_stance, on_connect)) {
         ESP_LOGE(TAG, "Failed to initialize BLE!");
@@ -251,14 +254,6 @@ void app_main(void)
     ESP_LOGI(TAG, "║  BLE Ready - Connect via Web Bluetooth ║");
     ESP_LOGI(TAG, "║  Device: MicroPupper                   ║");
     ESP_LOGI(TAG, "╚═══════════════════════════════════════╝");
-    ESP_LOGI(TAG, "");
-    ESP_LOGI(TAG, "Commands:");
-    ESP_LOGI(TAG, "  Move:     {\"s\":[fr,fl,br,bl,speed,delay]}");
-    ESP_LOGI(TAG, "  Multi:    {\"m\":[[fr,fl,br,bl,spd,dly],[...]]}");
-    ESP_LOGI(TAG, "  Per-leg:  {\"l\":[[fr,spd,dly],[fl,...],[br,...],[bl,...]]}");
-    ESP_LOGI(TAG, "  Per-leg+: {\"L\":[per-leg moves...]}");
-    ESP_LOGI(TAG, "  Stance:   {\"c\":\"stance\"}");
-    ESP_LOGI(TAG, "  Ping:     {\"c\":\"ping\"}");
     ESP_LOGI(TAG, "");
     
     while (1) {

@@ -20,7 +20,7 @@
 #define GYRO_BALANCE_ENABLED_DEFAULT        false
 
 // Maximum leg angle adjustment from neutral (degrees)
-#define GYRO_BALANCE_MAX_CORRECTION         90.0f
+#define GYRO_BALANCE_MAX_CORRECTION         65.0f
 
 // Gyro deadzone - ignore small rotations (degrees/second)
 #define GYRO_BALANCE_DEADZONE               0.5f
