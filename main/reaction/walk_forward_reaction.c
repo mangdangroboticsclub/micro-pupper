@@ -181,7 +181,7 @@ void walk_forward_play_while_pushed(void (*get_imu_data)(float *pitch, float *ac
     }
     
     ESP_LOGI(TAG, "Returning to stance");
-    dog_goto_stance();
+    // dog_goto_stance();
     // Return to stance position after animation completes
     ESP_LOGI(TAG, "Animation complete, returning to stance");
     dog_goto_stance_smooth();
