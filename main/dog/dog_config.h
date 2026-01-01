@@ -103,10 +103,10 @@
 // ═══════════════════════════════════════════════════════
 // Speed scales based on distance to target to prevent oscillation
 
-#define DOG_STANCE_SPEED_MIN        100     // Speed for small corrections
+#define DOG_STANCE_SPEED_MIN        20     // Speed for small corrections
 #define DOG_STANCE_SPEED_MAX        1500    // Speed for large movements
-#define DOG_STANCE_SPEED_THRESHOLD  30.0f   // Angle delta for max speed (degrees)
-#define DOG_STANCE_SPEED_CURVE      1.5f    // Power curve (>1 = bias toward slow)
+#define DOG_STANCE_SPEED_THRESHOLD  40.0f   // Angle delta for max speed (degrees)
+#define DOG_STANCE_SPEED_CURVE      1.4f    // Power curve (>1 = bias toward slow)
 
 // ═══════════════════════════════════════════════════════
 // IMU CONFIGURATION (QMI8658A)
