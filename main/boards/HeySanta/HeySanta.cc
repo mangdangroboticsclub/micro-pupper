@@ -3,11 +3,16 @@
 #include "application.h"
 #include "button.h"
 #include "config.h"
+#include "i2c_device.h"
 #include "esp32_camera.h"
 #include "mcp_server.h"
 #include "audio/codecs/santa_audio_codec.h"
 #include "assets/lang_config.h"
-#include "emoji_display.h"
+
+// STS3032 Servo Driver (local to HeySanta)
+extern "C" {
+#include "sts3032_servo.h"
+}
 
 #include <esp_log.h>
 #include <esp_lcd_panel_vendor.h>
@@ -15,81 +20,90 @@
 #include <driver/i2c_master.h>
 #include <driver/spi_common.h>
 #include <wifi_station.h>
-
+#include <esp_lvgl_port.h>
+#include <lvgl.h>
 #include "driver/gpio.h"
 #include "driver/uart.h"
+#include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-
+#include "emoji_display.h"
 #include <string.h>
-#include <cmath>
 #include <cstdlib>
+#include <cmath>
 
 #define TAG "HeySanta"
 
 LV_FONT_DECLARE(font_puhui_20_4);
 LV_FONT_DECLARE(font_awesome_20_4);
 
-// ─────────────────────────────────────────────────────────────
-// STS3032 Servo Protocol Definitions
-// ─────────────────────────────────────────────────────────────
-#define SERVO_UART_NUM UART_NUM_1
-#define SERVO_TX_PIN GPIO_NUM_10
-#define SERVO_RX_PIN GPIO_NUM_11
-#define SERVO_TXEN_PIN GPIO_NUM_3
-#define SERVO_BAUD_RATE 1000000
+// ═══════════════════════════════════════════════════════
+// SERVO CONFIGURATION (using sts3032 driver)
+// ═══════════════════════════════════════════════════════
+#define SERVO_UART_NUM      UART_NUM_1
+#define SERVO_TX_PIN        GPIO_NUM_10
+#define SERVO_RX_PIN        GPIO_NUM_11
+#define SERVO_TXEN_PIN      GPIO_NUM_3
+#define SERVO_BAUD_RATE     1000000
 
-#define STS_FRAME_HEADER 0xFF
-#define STS_BROADCAST_ID 0xFE
-#define STS_PING 0x01
-#define STS_WRITE 0x03
-#define STS_SYNC_WRITE 0x83
-#define STS_TORQUE_ENABLE 0x28
-#define STS_GOAL_POSITION_L 0x2A
+// Servo IDs (same convention as dog_config)
+#define SERVO_FR            1   // Front Right
+#define SERVO_FL            2   // Front Left
+#define SERVO_BR            3   // Back Right
+#define SERVO_BL            4   // Back Left
+#define SERVO_COUNT         4
 
-// Servo IDs
-#define SERVO_FL 2
-#define SERVO_FR 1
-#define SERVO_BL 4
-#define SERVO_BR 3
+// Stance angles (from left-side perspective)
+#define STANCE_FRONT        90.0f   // Front legs neutral
+#define STANCE_BACK         270.0f  // Back legs neutral
+#define SWING_AMPLITUDE     25.0f   // Max deviation from stance
 
-// Neutral/Stance positions
-#define NEUTRAL_FL 90.0f
-#define NEUTRAL_FR 90.0f
-#define NEUTRAL_BL 270.0f
-#define NEUTRAL_BR 270.0f
+// Speed presets
+#define SPEED_SLOW          300
+#define SPEED_MEDIUM        700
+#define SPEED_FAST          1500
+#define SPEED_VERY_FAST     3000
+#define SPEED_MAX           4095
 
-// ─────────────────────────────────────────────────────────────
-// QMI8658A IMU Definitions
-// IMPORTANT: must share the same physical I2C pins (GPIO1/2)
-// and the same I2C controller port as camera SCCB in this project.
-// ─────────────────────────────────────────────────────────────
-#define SHARED_I2C_PORT      I2C_NUM_1     // Use port 1 to match your earlier camera config
-#define SHARED_I2C_SDA_PIN   GPIO_NUM_1
-#define SHARED_I2C_SCL_PIN   GPIO_NUM_2
-#define SHARED_I2C_FREQ_HZ   400000
+// Dynamic speed for stance (prevents shaking)
+#define STANCE_SPEED_MIN        20
+#define STANCE_SPEED_MAX        1500
+#define STANCE_SPEED_THRESHOLD  40.0f
+#define STANCE_SPEED_CURVE      1.4f
 
-#define IMU_I2C_ADDR         0x6A          // 7-bit
-#define IMU_CHIP_ID          0x05
+// Angle reversal macros for right-side servos
+#define REVERSE_ANGLE(angle)    (360.0f - (angle))
+#define IS_RIGHT_SIDE(id)       ((id) == SERVO_FR || (id) == SERVO_BR)
+#define IS_FRONT_LEG(id)        ((id) == SERVO_FR || (id) == SERVO_FL)
+
+// ═══════════════════════════════════════════════════════
+// QMI8658A IMU CONFIG
+// ═══════════════════════════════════════════════════════
+#define IMU_SDA_PIN         GPIO_NUM_1
+#define IMU_SCL_PIN         GPIO_NUM_2
+#define IMU_I2C_FREQ_HZ     400000
+
+#define IMU_I2C_ADDR_PRIMARY   0x6A
+#define IMU_I2C_ADDR_SECONDARY 0x6B
+
+#define IMU_CHIP_ID         0x05
 
 // QMI8658A Registers
 #define QMI_REG_CHIP_ID     0x00
+#define QMI_REG_REVISION    0x01
 #define QMI_REG_CTRL1       0x02
 #define QMI_REG_CTRL2       0x03
 #define QMI_REG_CTRL3       0x04
+#define QMI_REG_CTRL4       0x05
+#define QMI_REG_CTRL5       0x06
+#define QMI_REG_CTRL6       0x07
 #define QMI_REG_CTRL7       0x08
+#define QMI_REG_CTRL8       0x09
+#define QMI_REG_CTRL9       0x0A
 #define QMI_REG_STATUS0     0x2E
 #define QMI_REG_AX_L        0x35
 
-// IMU Configuration: ±8g accel, ±512 dps gyro, 500Hz ODR
-#define IMU_ACCEL_RANGE     0x20  // ±8g
-#define IMU_ACCEL_ODR       0x04  // 500Hz
-#define IMU_GYRO_RANGE      0x50  // ±512 dps
-#define IMU_GYRO_ODR        0x04  // 500Hz
-
-// ─────────────────────────────────────────────────────────────
-// Gyro Balance Configuration
-// ─────────────────────────────────────────────────────────────
+// Gyro Balance Config
 #define GYRO_BALANCE_ENABLED_DEFAULT    false
 #define GYRO_BALANCE_MAX_CORRECTION     90.0f
 #define GYRO_BALANCE_DEADZONE           0.5f
@@ -106,128 +120,148 @@ LV_FONT_DECLARE(font_awesome_20_4);
 #define GYRO_BALANCE_TOGGLE_WINDOW_MS   1000
 #define GYRO_BALANCE_TOGGLE_COOLDOWN_MS 1500
 
-// ─────────────────────────────────────────────────────────────
-// IMU Data Structure
-// ─────────────────────────────────────────────────────────────
 struct ImuData {
     float accel_x, accel_y, accel_z;
     float gyro_x, gyro_y, gyro_z;
     float accel_magnitude;
 };
 
-// ─────────────────────────────────────────────────────────────
-// IMU Controller Class (QMI8658A driver - using new i2c_master API)
-// ─────────────────────────────────────────────────────────────
+// Shared keyframe structure for movement sequences (FR, FL, BR, BL)
+struct Keyframe {
+    float fr;
+    float fl;
+    float br;
+    float bl;
+    uint16_t speed;
+    uint16_t delay_ms;
+};
+
+// ═══════════════════════════════════════════════════════
+// GLOBAL CONVERSATION LOCK
+// ═══════════════════════════════════════════════════════
+static volatile bool g_conversation_active = false;
+
+void SetConversationActive(bool active) {
+    g_conversation_active = active;
+    if (active) {
+        ESP_LOGI(TAG, "🔒 CONVERSATION ACTIVE - IMU balance paused");
+    } else {
+        ESP_LOGI(TAG, "🔓 CONVERSATION ENDED - IMU balance resumed");
+    }
+}
+
+bool IsConversationActive() {
+    return g_conversation_active;
+}
+
+// ═══════════════════════════════════════════════════════
+// IMU CONTROLLER
+// ═══════════════════════════════════════════════════════
 class ImuController {
 private:
     bool initialized_ = false;
-    uint8_t accel_range_ = IMU_ACCEL_RANGE;
-    uint8_t gyro_range_ = IMU_GYRO_RANGE;
-    i2c_master_bus_handle_t i2c_bus_ = nullptr;
-    i2c_master_dev_handle_t i2c_dev_ = nullptr;
+    uint8_t detected_address_ = 0;
+    i2c_master_dev_handle_t imu_device_ = nullptr;
     
     esp_err_t WriteReg(uint8_t reg, uint8_t value) {
+        if (!imu_device_) return ESP_ERR_INVALID_STATE;
         uint8_t buf[2] = {reg, value};
-        return i2c_master_transmit(i2c_dev_, buf, 2, 1000 / portTICK_PERIOD_MS);
+        return i2c_master_transmit(imu_device_, buf, 2, 1000);
     }
     
     esp_err_t ReadReg(uint8_t reg, uint8_t* value) {
-        return i2c_master_transmit_receive(i2c_dev_, &reg, 1, value, 1, 
-                                           1000 / portTICK_PERIOD_MS);
+        if (!imu_device_) return ESP_ERR_INVALID_STATE;
+        return i2c_master_transmit_receive(imu_device_, &reg, 1, value, 1, 1000);
     }
     
     esp_err_t ReadRegs(uint8_t reg, uint8_t* buf, size_t len) {
-        return i2c_master_transmit_receive(i2c_dev_, &reg, 1, buf, len, 
-                                           1000 / portTICK_PERIOD_MS);
+        if (!imu_device_) return ESP_ERR_INVALID_STATE;
+        return i2c_master_transmit_receive(imu_device_, &reg, 1, buf, len, 1000);
     }
     
     float AccelToMs2(int16_t raw) {
-        float sensitivity;
-        uint8_t range_bits = (accel_range_ >> 4) & 0x07;
-        switch (range_bits) {
-            case 0x00: sensitivity = 16384.0f; break;  // ±2g
-            case 0x01: sensitivity = 8192.0f;  break;  // ±4g
-            case 0x02: sensitivity = 4096.0f;  break;  // ±8g
-            case 0x03: sensitivity = 2048.0f;  break;  // ±16g
-            default:   sensitivity = 4096.0f;
-        }
-        return (raw / sensitivity) * 9.81f;
+        return (raw / 4096.0f) * 9.81f;
     }
     
     float GyroToDps(int16_t raw) {
-        float sensitivity;
-        uint8_t range_bits = (gyro_range_ >> 4) & 0x07;
-        switch (range_bits) {
-            case 0x00: sensitivity = 2048.0f; break;   // ±16 dps
-            case 0x01: sensitivity = 1024.0f; break;   // ±32 dps
-            case 0x02: sensitivity = 512.0f;  break;   // ±64 dps
-            case 0x03: sensitivity = 256.0f;  break;   // ±128 dps
-            case 0x04: sensitivity = 128.0f;  break;   // ±256 dps
-            case 0x05: sensitivity = 64.0f;   break;   // ±512 dps
-            case 0x06: sensitivity = 32.0f;   break;   // ±1024 dps
-            case 0x07: sensitivity = 16.0f;   break;   // ±2048 dps
-            default:   sensitivity = 64.0f;
-        }
-        return raw / sensitivity;
+        return raw / 64.0f;
     }
 
 public:
-    // Initialize using an existing i2c_master device handle (shared bus)
-    bool Initialize(i2c_master_dev_handle_t dev) {
-        ESP_LOGI(TAG, "Initializing QMI8658A IMU (shared i2c)...");
-        if (!dev) {
-            ESP_LOGE(TAG, "IMU device handle is null");
+    bool Initialize(i2c_master_bus_handle_t i2c_bus) {
+        ESP_LOGI(TAG, "=== QMI8658A IMU Initialization ===");
+        
+        if (!i2c_bus) {
+            ESP_LOGE(TAG, "I2C bus handle is null");
             return false;
         }
-        i2c_dev_ = dev;
+        
+        vTaskDelay(pdMS_TO_TICKS(100));
+        
+        uint8_t addresses[] = {IMU_I2C_ADDR_PRIMARY, IMU_I2C_ADDR_SECONDARY};
+        bool found = false;
+        
+        for (int i = 0; i < 2; i++) {
+            i2c_device_config_t dev_cfg = {
+                .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+                .device_address = addresses[i],
+                .scl_speed_hz = IMU_I2C_FREQ_HZ,
+            };
+            
+            i2c_master_dev_handle_t temp_dev;
+            if (i2c_master_bus_add_device(i2c_bus, &dev_cfg, &temp_dev) == ESP_OK) {
+                uint8_t chip_id;
+                uint8_t reg = QMI_REG_CHIP_ID;
+                if (i2c_master_transmit_receive(temp_dev, &reg, 1, &chip_id, 1, 1000) == ESP_OK) {
+                    if (chip_id == IMU_CHIP_ID) {
+                        ESP_LOGI(TAG, "✓ IMU found at address 0x%02X (chip ID: 0x%02X)", addresses[i], chip_id);
+                        imu_device_ = temp_dev;
+                        detected_address_ = addresses[i];
+                        found = true;
+                        break;
+                    }
+                }
+                i2c_master_bus_rm_device(temp_dev);
+            }
+        }
+        
+        if (!found) {
+            ESP_LOGE(TAG, "✗ IMU not found at 0x6A or 0x6B");
+            return false;
+        }
+        
+        WriteReg(QMI_REG_CTRL1, 0x80);
         vTaskDelay(pdMS_TO_TICKS(50));
-
-        uint8_t chip_id = 0;
-        esp_err_t err = ReadReg(QMI_REG_CHIP_ID, &chip_id);
-        if (err != ESP_OK) {
-            ESP_LOGE(TAG, "IMU Read chip id failed: %s", esp_err_to_name(err));
+        
+        WriteReg(QMI_REG_CTRL1, 0x40);
+        WriteReg(QMI_REG_CTRL2, 0x24);
+        WriteReg(QMI_REG_CTRL3, 0x54);
+        WriteReg(QMI_REG_CTRL7, 0x03);
+        WriteReg(QMI_REG_CTRL9, 0x00);
+        
+        vTaskDelay(pdMS_TO_TICKS(100));
+        
+        uint8_t status;
+        if (ReadReg(QMI_REG_STATUS0, &status) != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to read status register");
             return false;
         }
-        if (chip_id != IMU_CHIP_ID) {
-            ESP_LOGE(TAG, "IMU chip ID mismatch: 0x%02X (expected 0x%02X)", chip_id, IMU_CHIP_ID);
-            return false;
-        }
-        ESP_LOGI(TAG, "IMU chip ID: 0x%02X ✓", chip_id);
-
-        // Little-Endian + auto-increment
-        ESP_ERROR_CHECK(WriteReg(QMI_REG_CTRL1, 0x40));
-
-        // Accel config
-        uint8_t ctrl2 = (IMU_ACCEL_RANGE & 0x70) | (IMU_ACCEL_ODR & 0x0F);
-        ESP_ERROR_CHECK(WriteReg(QMI_REG_CTRL2, ctrl2));
-
-        // Gyro config
-        uint8_t ctrl3 = (IMU_GYRO_RANGE & 0x70) | (IMU_GYRO_ODR & 0x0F);
-        ESP_ERROR_CHECK(WriteReg(QMI_REG_CTRL3, ctrl3));
-
-        // Enable accel+gyro
-        ESP_ERROR_CHECK(WriteReg(QMI_REG_CTRL7, 0x03));
-
-        vTaskDelay(pdMS_TO_TICKS(50));
+        
+        ESP_LOGI(TAG, "✓ IMU initialized (status: 0x%02X)", status);
+        ESP_LOGI(TAG, "  Config: ±8g accel, ±512dps gyro, 500Hz ODR");
+        
         initialized_ = true;
-        ESP_LOGI(TAG, "IMU initialized OK");
         return true;
     }
     
     bool Read(ImuData* data) {
         if (!initialized_) return false;
         
-        // Read status to latch data
-        uint8_t status;
-        ReadReg(QMI_REG_STATUS0, &status);
-        
-        // Read 12 bytes: accel (6) + gyro (6)
         uint8_t buf[12];
         if (ReadRegs(QMI_REG_AX_L, buf, 12) != ESP_OK) {
             return false;
         }
         
-        // Combine bytes (little-endian)
         int16_t raw_ax = (int16_t)((buf[1] << 8) | buf[0]);
         int16_t raw_ay = (int16_t)((buf[3] << 8) | buf[2]);
         int16_t raw_az = (int16_t)((buf[5] << 8) | buf[4]);
@@ -248,11 +282,12 @@ public:
     }
     
     bool IsInitialized() const { return initialized_; }
+    uint8_t GetAddress() const { return detected_address_; }
 };
 
-// ─────────────────────────────────────────────────────────────
-// Gyro Balance Controller Class
-// ─────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════
+// GYRO BALANCE CONTROLLER
+// ═══════════════════════════════════════════════════════
 class GyroBalanceController {
 private:
     bool enabled_ = false;
@@ -260,7 +295,6 @@ private:
     float last_correction_ = 0.0f;
     uint32_t last_update_time_ = 0;
     
-    // Toggle detection state machine
     enum ToggleState { IDLE, FIRST_ROTATION, WAITING_REVERSE };
     ToggleState toggle_state_ = IDLE;
     bool first_rotation_positive_ = false;
@@ -269,16 +303,12 @@ private:
     
     uint16_t CalculateDynamicSpeed(float angle_delta) {
         float abs_delta = fabsf(angle_delta);
-        if (abs_delta < 0.5f) {
-            return GYRO_BALANCE_SPEED_MIN;
-        }
+        if (abs_delta < 0.5f) return GYRO_BALANCE_SPEED_MIN;
         
         float normalized = abs_delta / GYRO_BALANCE_SPEED_THRESHOLD;
         if (normalized > 1.0f) normalized = 1.0f;
         
-        // Apply power curve to bias toward slower speeds
         float curved = powf(normalized, GYRO_BALANCE_SPEED_CURVE);
-        
         uint16_t speed = GYRO_BALANCE_SPEED_MIN + 
                         (uint16_t)(curved * (GYRO_BALANCE_SPEED_MAX - GYRO_BALANCE_SPEED_MIN));
         
@@ -288,9 +318,9 @@ private:
     
 public:
     bool ProcessToggle(float gyro_x) {
+        return false;
         uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
         
-        // Cooldown check
         if ((now - last_toggle_time_) < GYRO_BALANCE_TOGGLE_COOLDOWN_MS) {
             return false;
         }
@@ -303,35 +333,28 @@ public:
                     toggle_state_ = FIRST_ROTATION;
                     first_rotation_positive_ = (gyro_x > 0);
                     first_rotation_time_ = now;
-                    ESP_LOGI("GyroBalance", "Toggle: First rotation detected (positive=%d)", 
-                             first_rotation_positive_);
                 }
                 break;
                 
             case FIRST_ROTATION:
                 if ((now - first_rotation_time_) > GYRO_BALANCE_TOGGLE_WINDOW_MS) {
                     toggle_state_ = IDLE;
-                    ESP_LOGI("GyroBalance", "Toggle: Timed out waiting for reversal");
                 } else if (fabsf(gyro_x) < GYRO_BALANCE_TOGGLE_THRESHOLD * 0.5f) {
                     toggle_state_ = WAITING_REVERSE;
-                    ESP_LOGI("GyroBalance", "Toggle: Waiting for reverse rotation");
                 }
                 break;
                 
             case WAITING_REVERSE:
                 if ((now - first_rotation_time_) > GYRO_BALANCE_TOGGLE_WINDOW_MS) {
                     toggle_state_ = IDLE;
-                    ESP_LOGI("GyroBalance", "Toggle: Timed out waiting for reversal");
                 } else if (fabsf(gyro_x) > GYRO_BALANCE_TOGGLE_THRESHOLD) {
                     bool current_positive = (gyro_x > 0);
                     if (current_positive != first_rotation_positive_) {
-                        // Toggle detected!
                         enabled_ = !enabled_;
                         toggled = true;
                         last_toggle_time_ = now;
                         toggle_state_ = IDLE;
                         
-                        // Reset balance state on toggle
                         accumulated_angle_ = 0.0f;
                         last_correction_ = 0.0f;
                         
@@ -358,32 +381,24 @@ public:
         
         if (!enabled_) return result;
         
-        // Apply deadzone
         float filtered_gyro = gyro_y;
         if (fabsf(filtered_gyro) < GYRO_BALANCE_DEADZONE) {
             filtered_gyro = 0.0f;
         }
         
-        // Integrate with smoothing
         float raw_integration = filtered_gyro * dt_sec;
         accumulated_angle_ += raw_integration * GYRO_BALANCE_SMOOTHING;
-        
-        // Apply decay to prevent drift
         accumulated_angle_ *= GYRO_BALANCE_DECAY;
         
-        // Calculate correction
         float correction = accumulated_angle_ * GYRO_BALANCE_GAIN;
         
-        // Clamp correction
         if (correction > GYRO_BALANCE_MAX_CORRECTION) correction = GYRO_BALANCE_MAX_CORRECTION;
         if (correction < -GYRO_BALANCE_MAX_CORRECTION) correction = -GYRO_BALANCE_MAX_CORRECTION;
         
-        // Calculate dynamic speed based on change in correction
         float correction_delta = correction - last_correction_;
         result.speed = CalculateDynamicSpeed(correction_delta);
         last_correction_ = correction;
         
-        // Apply to leg groups (front legs move opposite to back legs)
         result.front_offset = correction;
         result.back_offset = -correction;
         
@@ -404,376 +419,405 @@ public:
     }
 };
 
-// ─────────────────────────────────────────────────────────────
-// Servo Control Class
-// ─────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════
+// SERVO CONTROLLER - Using sts3032 driver library
+// ═══════════════════════════════════════════════════════
 class ServoController {
 private:
-    int global_servo_speed = 4095;
-    bool is_flipped = false;
-    
-    struct ServoState {
-        float last_unwrapped_hw;
-    };
-    
-    ServoState servo_states[4] = {
-        {NEUTRAL_FL},
-        {360.0f - NEUTRAL_FR},
-        {NEUTRAL_BL},
-        {360.0f - NEUTRAL_BR}
-    };
-    
-    struct {
-        float fl, fr, bl, br;
-    } continuous_pos = {NEUTRAL_FL, NEUTRAL_FR, NEUTRAL_BL, NEUTRAL_BR};
+    uint16_t default_speed_ = SPEED_MAX;
+    bool is_flipped_ = false;
+    bool initialized_ = false;
 
-    static inline float wrap_0_360(float a) {
-        float r = fmodf(a, 360.0f);
-        if (r < 0) r += 360.0f;
-        return r;
-    }
-
-    static inline uint16_t angle_to_position(float angle_0_360) {
-        if (angle_0_360 < 0) angle_0_360 = wrap_0_360(angle_0_360);
-        if (angle_0_360 >= 360.0f) angle_0_360 = wrap_0_360(angle_0_360);
-        return (uint16_t)lroundf(angle_0_360 * 4095.0f / 360.0f);
-    }
-
-    static inline float unwrap_to_nearest(float current, float target) {
-        float k = roundf((current - target) / 360.0f);
-        return target + 360.0f * k;
-    }
-
-    float map_target_to_hw_unwrapped(float target_continuous, bool reverse, float last_unwrapped_hw) {
-        float t = target_continuous;
-        if (reverse) t = 360.0f - t;
-        return unwrap_to_nearest(last_unwrapped_hw, t);
-    }
-
-    static uint8_t sts_checksum(uint8_t *buf, int len) {
-        uint8_t sum = 0;
-        for (int i = 2; i < len - 1; i++) sum += buf[i];
-        return (uint8_t)(~sum);
-    }
-
-    void sts_send_packet(uint8_t id, uint8_t cmd, uint8_t *params, int param_len) {
-        uint8_t packet[128];
-        packet[0] = STS_FRAME_HEADER;
-        packet[1] = STS_FRAME_HEADER;
-        packet[2] = id;
-        packet[3] = param_len + 2;
-        packet[4] = cmd;
-        if (params && param_len > 0) memcpy(&packet[5], params, param_len);
-        
-        int total_len = 5 + param_len + 1;
-        packet[total_len - 1] = sts_checksum(packet, total_len);
-
-        gpio_set_level(SERVO_TXEN_PIN, 1);
-        uart_flush(SERVO_UART_NUM);
-        uart_write_bytes(SERVO_UART_NUM, packet, total_len);
-        uart_wait_tx_done(SERVO_UART_NUM, pdMS_TO_TICKS(50));
-        gpio_set_level(SERVO_TXEN_PIN, 0);
-    }
-
-    void sts_enable_torque(uint8_t id, bool enable) {
-        uint8_t params[2];
-        params[0] = STS_TORQUE_ENABLE;
-        params[1] = enable ? 1 : 0;
-        sts_send_packet(id, STS_WRITE, params, 2);
-        vTaskDelay(pdMS_TO_TICKS(10));
-    }
-
-    void sts_sync_write_positions(uint8_t *ids, float *angles_0_360, uint8_t num_servos, uint16_t speed) {
-        uint8_t params[128];
-        params[0] = STS_GOAL_POSITION_L;
-        params[1] = 6;
-
-        int idx = 2;
-        for (int i = 0; i < num_servos; i++) {
-            float a = wrap_0_360(angles_0_360[i]);
-            uint16_t position = angle_to_position(a);
-
-            params[idx++] = ids[i];
-            params[idx++] = position & 0xFF;
-            params[idx++] = (position >> 8) & 0xFF;
-            params[idx++] = 0x00;
-            params[idx++] = 0x00;
-            params[idx++] = speed & 0xFF;
-            params[idx++] = (speed >> 8) & 0xFF;
+    /**
+     * @brief Apply angle reversal for right-side servos
+     * Right-side servos are mounted mirrored, so we reverse angles
+     */
+    static float ApplyReversal(uint8_t servo_id, float angle) {
+        if (IS_RIGHT_SIDE(servo_id)) {
+            return REVERSE_ANGLE(angle);
         }
-
-        sts_send_packet(STS_BROADCAST_ID, STS_SYNC_WRITE, params, idx);
-        vTaskDelay(pdMS_TO_TICKS(5));
+        return angle;
     }
 
-    void servo_write_all(float fl, float fr, float bl, float br, uint16_t speed) {
-        uint8_t ids[] = {SERVO_FL, SERVO_FR, SERVO_BL, SERVO_BR};
+    /**
+     * @brief Get base stance angle for a servo (before reversal)
+     */
+    static float GetBaseStance(uint8_t servo_id) {
+        if (IS_FRONT_LEG(servo_id)) {
+            return STANCE_FRONT;
+        } else {
+            return STANCE_BACK;
+        }
+    }
 
-        continuous_pos.fl = fl;
-        continuous_pos.fr = fr;
-        continuous_pos.bl = bl;
-        continuous_pos.br = br;
+    /**
+     * @brief Calculate dynamic speed based on angle delta
+     */
+    static uint16_t CalculateDynamicSpeed(float angle_delta) {
+        float abs_delta = fabsf(angle_delta);
+        float speed_ratio = abs_delta / STANCE_SPEED_THRESHOLD;
+        
+        if (speed_ratio > 1.0f) {
+            speed_ratio = 1.0f;
+        }
+        
+        // Apply power curve to bias toward lower speeds
+        speed_ratio = powf(speed_ratio, STANCE_SPEED_CURVE);
+        
+        return (uint16_t)(STANCE_SPEED_MIN + 
+                          speed_ratio * (STANCE_SPEED_MAX - STANCE_SPEED_MIN));
+    }
 
-        float unwrapped_hw[4];
-        unwrapped_hw[0] = map_target_to_hw_unwrapped(fl, false, servo_states[0].last_unwrapped_hw);
-        unwrapped_hw[1] = map_target_to_hw_unwrapped(fr, true,  servo_states[1].last_unwrapped_hw);
-        unwrapped_hw[2] = map_target_to_hw_unwrapped(bl, false, servo_states[2].last_unwrapped_hw);
-        unwrapped_hw[3] = map_target_to_hw_unwrapped(br, true,  servo_states[3].last_unwrapped_hw);
+    /**
+     * @brief Move a single servo with automatic reversal for right side
+     */
+    void ServoMove(uint8_t servo_id, float angle, uint16_t speed) {
+        float actual_angle = ApplyReversal(servo_id, angle);
+        sts_servo_set_angle(servo_id, actual_angle, speed);
+    }
 
-        for (int i = 0; i < 4; i++) servo_states[i].last_unwrapped_hw = unwrapped_hw[i];
-
-        float hw_wrapped[4] = {
-            wrap_0_360(unwrapped_hw[0]),
-            wrap_0_360(unwrapped_hw[1]),
-            wrap_0_360(unwrapped_hw[2]),
-            wrap_0_360(unwrapped_hw[3]),
-        };
-
-        sts_sync_write_positions(ids, hw_wrapped, 4, speed);
+    /**
+     * @brief Move all servos with automatic reversal for right side
+     * @param angle_fr Front-right angle (from left perspective, will be reversed)
+     * @param angle_fl Front-left angle
+     * @param angle_br Back-right angle (from left perspective, will be reversed)
+     * @param angle_bl Back-left angle
+     * @param speed Movement speed
+     */
+    void ServoMoveAll(float angle_fr, float angle_fl, float angle_br, float angle_bl, uint16_t speed) {
+        // Apply reversal to right-side servos
+        float actual_fr = ApplyReversal(SERVO_FR, angle_fr);
+        float actual_br = ApplyReversal(SERVO_BR, angle_br);
+        
+        // Left side uses angles directly
+        float actual_fl = angle_fl;
+        float actual_bl = angle_bl;
+        
+        // Move all servos using sts3032 driver
+        sts_servo_set_angle(SERVO_FR, actual_fr, speed);
+        sts_servo_set_angle(SERVO_FL, actual_fl, speed);
+        sts_servo_set_angle(SERVO_BR, actual_br, speed);
+        sts_servo_set_angle(SERVO_BL, actual_bl, speed);
     }
 
 public:
     void Initialize() {
-        ESP_LOGI(TAG, "Initializing servo controller (robot dog inside HeySanta)...");
+        ESP_LOGI(TAG, "Initializing servo controller using sts3032 driver...");
         
-        // Configure TX enable pin
-        gpio_config_t io_conf = {
-            .pin_bit_mask = (1ULL << SERVO_TXEN_PIN),
-            .mode = GPIO_MODE_OUTPUT,
-            .pull_up_en = GPIO_PULLUP_DISABLE,
-            .pull_down_en = GPIO_PULLDOWN_DISABLE,
-            .intr_type = GPIO_INTR_DISABLE,
-        };
-        gpio_config(&io_conf);
-        gpio_set_level(SERVO_TXEN_PIN, 0);
-
-        // Configure UART
-        uart_config_t uart_config = {
+        // Initialize the servo protocol using sts3032 driver
+        sts_protocol_config_t protocol_config = {
+            .uart_num = SERVO_UART_NUM,
+            .tx_pin = SERVO_TX_PIN,
+            .rx_pin = SERVO_RX_PIN,
+            .txen_pin = SERVO_TXEN_PIN,
             .baud_rate = SERVO_BAUD_RATE,
-            .data_bits = UART_DATA_8_BITS,
-            .parity = UART_PARITY_DISABLE,
-            .stop_bits = UART_STOP_BITS_1,
-            .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
-            .source_clk = UART_SCLK_DEFAULT,
         };
-
-        ESP_ERROR_CHECK(uart_driver_install(SERVO_UART_NUM, 2048, 2048, 0, NULL, 0));
-        ESP_ERROR_CHECK(uart_param_config(SERVO_UART_NUM, &uart_config));
-        ESP_ERROR_CHECK(uart_set_pin(SERVO_UART_NUM, SERVO_TX_PIN, SERVO_RX_PIN,
-                                     UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
-
-        vTaskDelay(pdMS_TO_TICKS(500));
-
+        
+        esp_err_t ret = sts_protocol_init(&protocol_config);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to initialize servo protocol: %s", esp_err_to_name(ret));
+            return;
+        }
+        
+        ESP_LOGI(TAG, "Servo protocol initialized");
+        vTaskDelay(pdMS_TO_TICKS(100));
+        
+        // Check all servos
+        ESP_LOGI(TAG, "Checking servos...");
+        int found = sts_servo_scan_bus(1, SERVO_COUNT);
+        if (found < SERVO_COUNT) {
+            ESP_LOGW(TAG, "Only %d of %d servos responding", found, SERVO_COUNT);
+        }
+        
         // Enable torque on all servos
         ESP_LOGI(TAG, "Enabling servo torque...");
-        for (uint8_t id = 1; id <= 4; id++) {
-            sts_enable_torque(id, true);
-            vTaskDelay(pdMS_TO_TICKS(50));
+        for (uint8_t id = 1; id <= SERVO_COUNT; id++) {
+            sts_servo_enable_torque(id, true);
         }
-
+        vTaskDelay(pdMS_TO_TICKS(100));
+        
+        initialized_ = true;
         MoveInit();
+        
+        ESP_LOGI(TAG, "Servo controller initialized - Stance: Front=%.0f° Back=%.0f°",
+                 STANCE_FRONT, STANCE_BACK);
     }
 
     void MoveInit() {
-        ESP_LOGI(TAG, "Dog: Moving to neutral position");
-        continuous_pos.fl = NEUTRAL_FL;
-        continuous_pos.fr = NEUTRAL_FR;
-        continuous_pos.bl = NEUTRAL_BL;
-        continuous_pos.br = NEUTRAL_BR;
-
-        servo_states[0].last_unwrapped_hw = NEUTRAL_FL;
-        servo_states[1].last_unwrapped_hw = 360.0f - NEUTRAL_FR;
-        servo_states[2].last_unwrapped_hw = NEUTRAL_BL;
-        servo_states[3].last_unwrapped_hw = 360.0f - NEUTRAL_BR;
+        ESP_LOGI(TAG, "Dog: Moving to stance position");
         
-        servo_write_all(NEUTRAL_FL, NEUTRAL_FR, NEUTRAL_BL, NEUTRAL_BR, (uint16_t)global_servo_speed);
+        // Use unified angles - reversal happens automatically
+        ServoMoveAll(
+            STANCE_FRONT,  // FR
+            STANCE_FRONT,  // FL
+            STANCE_BACK,   // BR
+            STANCE_BACK,   // BL
+            default_speed_
+        );
+        
         vTaskDelay(pdMS_TO_TICKS(500));
     }
 
     void MoveReset() {
-        ESP_LOGI(TAG, "Dog: Resetting to neutral");
-        servo_write_all(NEUTRAL_FL, NEUTRAL_FR, NEUTRAL_BL, NEUTRAL_BR, (uint16_t)global_servo_speed);
-        is_flipped = false;
+        ESP_LOGI(TAG, "Dog: Resetting to stance (flipped: %s)", is_flipped_ ? "yes" : "no");
+        SetConversationActive(true);  // **BLOCK IMU**
+        
+        if (is_flipped_) {
+            // When flipped, front legs use back stance and back legs use front stance
+            ServoMoveAll(
+                STANCE_BACK,   // FR
+                STANCE_BACK,   // FL
+                STANCE_FRONT,  // BR
+                STANCE_FRONT,  // BL
+                default_speed_
+            );
+        } else {
+            // Normal orientation
+            ServoMoveAll(
+                STANCE_FRONT,  // FR
+                STANCE_FRONT,  // FL
+                STANCE_BACK,   // BR
+                STANCE_BACK,   // BL
+                default_speed_
+            );
+        }
+        
         vTaskDelay(pdMS_TO_TICKS(1000));
+        SetConversationActive(false);  // **UNBLOCK IMU**
     }
 
-    // Calculate dynamic speed based on movement distance
-    uint16_t CalculateStanceSpeed(float fl, float fr, float bl, float br) {
-        float max_delta = 0.0f;
-        float deltas[4] = {
-            fabsf(NEUTRAL_FL - fl),
-            fabsf(NEUTRAL_FR - fr),
-            fabsf(NEUTRAL_BL - bl),
-            fabsf(NEUTRAL_BR - br)
-        };
-        
-        for (int i = 0; i < 4; i++) {
-            if (deltas[i] > max_delta) max_delta = deltas[i];
-        }
-        
-        // Map delta to speed: small delta = slow, large delta = fast
-        const float min_delta = 5.0f;
-        const float max_delta_threshold = 60.0f;
-        const uint16_t min_speed = 200;
-        const uint16_t max_speed = 2000;
-        
-        if (max_delta < min_delta) return min_speed;
-        if (max_delta > max_delta_threshold) return max_speed;
-        
-        float normalized = (max_delta - min_delta) / (max_delta_threshold - min_delta);
-        return min_speed + (uint16_t)(normalized * (max_speed - min_speed));
-    }
-
-    void MoveToStanceSmooth() {
-        ESP_LOGI(TAG, "Dog: Moving to stance (smooth)");
-        
-        // Calculate dynamic speed based on current positions
-        uint16_t speed = CalculateStanceSpeed(
-            continuous_pos.fl, continuous_pos.fr,
-            continuous_pos.bl, continuous_pos.br
-        );
-        
-        servo_write_all(NEUTRAL_FL, NEUTRAL_FR, NEUTRAL_BL, NEUTRAL_BR, speed);
-    }
-
-    // Apply balance correction to current stance
     void ApplyBalance(float front_offset, float back_offset, uint16_t speed) {
-        float fl = NEUTRAL_FL + front_offset;
-        float fr = NEUTRAL_FR + front_offset;
-        float bl = NEUTRAL_BL + back_offset;
-        float br = NEUTRAL_BR + back_offset;
+        if (IsConversationActive()) return;  // **CHECK CONVERSATION LOCK**
         
-        servo_write_all(fl, fr, bl, br, speed);
+        // Apply balance offsets to stance angles
+        float front_angle = STANCE_FRONT + front_offset;
+        float back_angle = STANCE_BACK - back_offset;
+        
+        ServoMoveAll(front_angle, front_angle, back_angle, back_angle, speed);
     }
 
-    // Get current positions for balance calculations
-    void GetCurrentPositions(float* fl, float* fr, float* bl, float* br) {
-        *fl = continuous_pos.fl;
-        *fr = continuous_pos.fr;
-        *bl = continuous_pos.bl;
-        *br = continuous_pos.br;
-    }
-
+    // ═══════════════════════════════════════════════════════
+    // MOVEMENT SEQUENCES
+    // ═══════════════════════════════════════════════════════
     void WalkForward(int loops = 6) {
-        ESP_LOGI(TAG, "Dog: >>> DEMO WALK (6-keyframe) <<<");
-        // New 6-keyframe walk animation from walk_forward_reaction.c
-        // Format: {FL, FR, BL, BR, speed, delay_ms}
-        struct WalkKeyframe {
-            float fl, fr, bl, br;
-            uint16_t speed;
-            uint16_t delay_ms;
+        ESP_LOGI(TAG, "Dog: >>> WALKING FORWARD <<<");
+        SetConversationActive(true);  // **BLOCK IMU**
+        // Walk cycle implemented as keyframes (FR, FL, BR, BL)
+
+        Keyframe walk_keyframes[] = {
+            // Keyframe 1: Lift FR and BL
+            { .fr = 55,  .fl = 110, .br = 290, .bl = 240, .speed = 1600, .delay_ms = 250 },
+            // Keyframe 2: Swing FR and BL forward
+            { .fr = 95,  .fl = 80,  .br = 260, .bl = 285, .speed = 1050, .delay_ms = 250 },
+            // Keyframe 3: Neutral
+            { .fr = 90,  .fl = 90,  .br = 270, .bl = 270, .speed = 1300, .delay_ms = 80  },
+            // Keyframe 4: Lift FL and BR
+            { .fr = 110, .fl = 55,  .br = 240, .bl = 290, .speed = 1600, .delay_ms = 250 },
+            // Keyframe 5: Swing FL and BR forward
+            { .fr = 80,  .fl = 95,  .br = 285, .bl = 260, .speed = 950,  .delay_ms = 250 },
+            // Keyframe 6: Neutral
+            { .fr = 90,  .fl = 90,  .br = 270, .bl = 270, .speed = 700,  .delay_ms = 80  },
+        };
+
+        const int kf_count = sizeof(walk_keyframes) / sizeof(walk_keyframes[0]);
+
+        for (int loop = 0; loop < loops; loop++) {
+            for (int i = 0; i < kf_count; i++) {
+                const Keyframe &kf = walk_keyframes[i];
+                ServoMoveAll(kf.fr, kf.fl, kf.br, kf.bl, kf.speed);
+                vTaskDelay(pdMS_TO_TICKS(kf.delay_ms));
+            }
+        }
+        MoveReset();
+        SetConversationActive(false);  // **UNBLOCK IMU**
+    }
+
+    void DoubleFrontFlip() {
+        if (is_flipped_) {
+            ESP_LOGW(TAG, "Cannot perform DoubleFrontFlip - dog is flipped. Use BackFlipReverse first.");
+            return;
+        }
+        
+        ESP_LOGI(TAG, "Dog: >>> DOUBLE FRONT FLIP <<<");
+        SetConversationActive(true);  // **BLOCK IMU**
+        
+        const Keyframe keyframes[] = {
+            {.fr = 90.0f, .fl = 90.0f, .br = 270.0f, .bl = 270.0f, .speed = 4095, .delay_ms = 160},
+            {.fr = 30.0f, .fl = 30.0f, .br = 290.0f, .bl = 290.0f, .speed = 4095, .delay_ms = 300},
+            {.fr = 40.0f, .fl = 40.0f, .br = 140.0f, .bl = 140.0f, .speed = 4095, .delay_ms = 190},
+            {.fr = 270.0f, .fl = 270.0f, .br = 90.0f, .bl = 90.0f, .speed = 4095, .delay_ms = 300},
+            {.fr = 290.0f, .fl = 290.0f, .br = 45.0f, .bl = 45.0f, .speed = 4095, .delay_ms = 300},
+            {.fr = 90.0f, .fl = 90.0f, .br = 270.0f, .bl = 270.0f, .speed = 4095, .delay_ms = 300},
         };
         
-        WalkKeyframe keyframes[] = {
-            {55,  110, 250, 300, 1600, 150},
-            {95,  80,  280, 255, 1050, 150},
-            {90,  90,  270, 270, 1300, 75},
-            {110, 55,  300, 250, 1600, 150},
-            {80,  95,  255, 280, 950,  150},
-            {90,  90,  270, 270, 700,  75}
+        for (const auto& kf : keyframes) {
+            ServoMoveAll(kf.fr, kf.fl, kf.br, kf.bl, kf.speed);
+            vTaskDelay(pdMS_TO_TICKS(kf.delay_ms));
+        }
+        
+        MoveReset();
+        SetConversationActive(false);  // **UNBLOCK IMU**
+    }
+
+    void FrontFlip() {
+        if (is_flipped_) {
+            ESP_LOGW(TAG, "Cannot perform FrontFlip - dog is flipped. Use BackFlipReverse first.");
+            return;
+        }
+        
+        ESP_LOGI(TAG, "Dog: >>> FRONT FLIP <<<");
+        SetConversationActive(true);  // **BLOCK IMU**
+        
+        const Keyframe keyframes[] = {
+            {.fr = 90.0f, .fl = 90.0f, .br = 270.0f, .bl = 270.0f, .speed = 4095, .delay_ms = 160},
+            {.fr = 30.0f, .fl = 30.0f, .br = 300.0f, .bl = 300.0f, .speed = 4095, .delay_ms = 300},
+            {.fr = 40.0f, .fl = 40.0f, .br = 140.0f, .bl = 140.0f, .speed = 4095, .delay_ms = 190},
+            {.fr = 270.0f, .fl = 270.0f, .br = 90.0f, .bl = 90.0f, .speed = 4095, .delay_ms = 300},
         };
-        const int num_keyframes = 6;
-
-        for (int loop = 0; loop < loops; loop++) {
-            for (int i = 0; i < num_keyframes; i++) {
-                servo_write_all(keyframes[i].fl, keyframes[i].fr, 
-                               keyframes[i].bl, keyframes[i].br, 
-                               keyframes[i].speed);
-                vTaskDelay(keyframes[i].delay_ms + 1 / portTICK_PERIOD_MS);
-            }
+        
+        for (const auto& kf : keyframes) {
+            ServoMoveAll(kf.fr, kf.fl, kf.br, kf.bl, kf.speed);
+            vTaskDelay(pdMS_TO_TICKS(kf.delay_ms));
         }
+        
+        is_flipped_ = true;
         MoveReset();
-    }
-
-    void TurnLeft(int loops = 2) {
-        ESP_LOGI(TAG, "Dog: >>> TURN LEFT <<<");
-        float FL_angles[] = {65, 65, 115, 65};
-        float FR_angles[] = {65, 65, 65, 115};
-        float BL_angles[] = {295, 245, 245, 245};
-        float BR_angles[] = {245, 295, 245, 245};
-        uint16_t speeds[] = {700, 700, 700, 700};
-        uint16_t delays_ms[] = {200, 200, 200, 200};
-
-        for (int loop = 0; loop < loops; loop++) {
-            for (int i = 0; i < 4; i++) {
-                servo_write_all(FL_angles[i], FR_angles[i], BL_angles[i], BR_angles[i], speeds[i]);
-                vTaskDelay(delays_ms[i] / portTICK_PERIOD_MS);
-            }
-        }
-        MoveReset();
-    }
-
-    void TurnRight(int loops = 2) {
-        ESP_LOGI(TAG, "Dog: >>> TURN RIGHT <<<");
-        float FL_angles[] = {65, 65, 65, 115};
-        float FR_angles[] = {65, 65, 115, 65};
-        float BL_angles[] = {245, 295, 245, 245};
-        float BR_angles[] = {295, 245, 245, 245};
-        uint16_t speeds[] = {700, 700, 700, 700};
-        uint16_t delays_ms[] = {200, 200, 200, 200};
-
-        for (int loop = 0; loop < loops; loop++) {
-            for (int i = 0; i < 4; i++) {
-                servo_write_all(FL_angles[i], FR_angles[i], BL_angles[i], BR_angles[i], speeds[i]);
-                vTaskDelay(delays_ms[i] / portTICK_PERIOD_MS);
-            }
-        }
-        MoveReset();
-    }
-
-    void BackFlip() {
-        ESP_LOGI(TAG, "Dog: >>> BACKFLIP <<<");
-        float FL_angles[] = {80, 50, 20, 260};
-        float FR_angles[] = {80, 50, 20, 260};
-        float BL_angles[] = {260, 275, 230, 80};
-        float BR_angles[] = {260, 275, 230, 80};
-        uint16_t speeds[] = {4095, 4095, 4095, 4095};
-        uint16_t delays_ms[] = {64, 204, 204, 204};
-
-        for (int i = 0; i < 4; i++) {
-            servo_write_all(FL_angles[i], FR_angles[i], BL_angles[i], BR_angles[i], speeds[i]);
-            vTaskDelay(delays_ms[i] / portTICK_PERIOD_MS);
-        }
-        MoveReset();
-    }
-
-    void BackFlipReverse() {
-        ESP_LOGI(TAG, "Dog: >>> BACKFLIP REVERSE <<<");
-        float FL_angles[] = {260, 310, 280, 80};
-        float FR_angles[] = {260, 310, 280, 80};
-        float BL_angles[] = {80, 85, 30, 260};
-        float BR_angles[] = {80, 85, 30, 260};
-        uint16_t speeds[] = {4095, 4095, 4095, 4095};
-        uint16_t delays_ms[] = {64, 204, 204, 204};
-
-        for (int i = 0; i < 4; i++) {
-            servo_write_all(FL_angles[i], FR_angles[i], BL_angles[i], BR_angles[i], speeds[i]);
-            vTaskDelay(delays_ms[i] / portTICK_PERIOD_MS);
-        }
-        MoveReset();
+        SetConversationActive(false);  // **UNBLOCK IMU**
     }
 
     void Pounce() {
-        ESP_LOGI(TAG, "Dog: >>> POUNCE <<<");
-        float FL_angles[] = {90, 80, 140, 90};
-        float FR_angles[] = {90, 80, 140, 90};
-        float BL_angles[] = {270, 290, 230, 270};
-        float BR_angles[] = {270, 290, 230, 270};
-        uint16_t speeds[] = {4095, 4095, 4095, 4095};
-        uint16_t delays_ms[] = {107, 213, 265, 160};
-
-        for (int i = 0; i < 4; i++) {
-            servo_write_all(FL_angles[i], FR_angles[i], BL_angles[i], BR_angles[i], speeds[i]);
-            vTaskDelay(delays_ms[i] / portTICK_PERIOD_MS);
+        if (is_flipped_) {
+            ESP_LOGW(TAG, "Cannot perform Pounce - dog is flipped. Use BackFlipReverse first.");
+            return;
         }
+        
+        ESP_LOGI(TAG, "Dog: >>> POUNCE <<<");
+        SetConversationActive(true);  // **BLOCK IMU**
+        
+        const Keyframe keyframes[] = {
+            {.fr = 90.0f, .fl = 90.0f, .br = 270.0f, .bl = 270.0f, .speed = 4095, .delay_ms = 207},
+            {.fr = 80.0f, .fl = 80.0f, .br = 290.0f, .bl = 290.0f, .speed = 4095, .delay_ms = 313},
+            {.fr = 140.0f, .fl = 140.0f, .br = 230.0f, .bl = 230.0f, .speed = 4095, .delay_ms = 200},
+            {.fr = 90.0f, .fl = 90.0f, .br = 270.0f, .bl = 270.0f, .speed = 4095, .delay_ms = 260},
+        };
+        
+        for (const auto& kf : keyframes) {
+            ServoMoveAll(kf.fr, kf.fl, kf.br, kf.bl, kf.speed);
+            vTaskDelay(pdMS_TO_TICKS(kf.delay_ms));
+        }
+        
         MoveReset();
+        SetConversationActive(false);  // **UNBLOCK IMU**
     }
 
+    void BackFlip() {
+        if (is_flipped_) {
+            ESP_LOGW(TAG, "Cannot perform BackFlip - dog is already flipped. Use BackFlipReverse first.");
+            return;
+        }
+        
+        ESP_LOGI(TAG, "Dog: >>> BACK FLIP <<<");
+        SetConversationActive(true);  // **BLOCK IMU**
+        
+        const Keyframe keyframes[] = {
+            {.fr = 80.0f, .fl = 80.0f, .br = 260.0f, .bl = 260.0f, .speed = 4095, .delay_ms = 164},
+            {.fr = 50.0f, .fl = 50.0f, .br = 275.0f, .bl = 275.0f, .speed = 4095, .delay_ms = 304},
+            {.fr = 20.0f, .fl = 20.0f, .br = 230.0f, .bl = 230.0f, .speed = 4095, .delay_ms = 304},
+            {.fr = 260.0f, .fl = 260.0f, .br = 80.0f, .bl = 80.0f, .speed = 4095, .delay_ms = 304},
+        };
+        
+        for (const auto& kf : keyframes) {
+            ServoMoveAll(kf.fr, kf.fl, kf.br, kf.bl, kf.speed);
+            vTaskDelay(pdMS_TO_TICKS(kf.delay_ms));
+        }
+        
+        is_flipped_ = true;
+        MoveReset();
+        SetConversationActive(false);  // **UNBLOCK IMU**
+    }
+
+    void BackFlipReverse() {
+        if (!is_flipped_) {
+            ESP_LOGW(TAG, "Cannot perform BackFlipReverse - dog is not flipped. Use BackFlip first.");
+            return;
+        }
+        
+        ESP_LOGI(TAG, "Dog: >>> BACK FLIP REVERSE <<<");
+        SetConversationActive(true);  // **BLOCK IMU**
+        
+        const Keyframe keyframes[] = {
+            {.fr = 260.0f, .fl = 260.0f, .br = 80.0f, .bl = 80.0f, .speed = 4095, .delay_ms = 164},
+            {.fr = 310.0f, .fl = 310.0f, .br = 85.0f, .bl = 85.0f, .speed = 4095, .delay_ms = 304},
+            {.fr = 280.0f, .fl = 280.0f, .br = 30.0f, .bl = 30.0f, .speed = 4095, .delay_ms = 304},
+            {.fr = 80.0f, .fl = 80.0f, .br = 260.0f, .bl = 260.0f, .speed = 4095, .delay_ms = 304},
+        };
+        
+        for (const auto& kf : keyframes) {
+            ServoMoveAll(kf.fr, kf.fl, kf.br, kf.bl, kf.speed);
+            vTaskDelay(pdMS_TO_TICKS(kf.delay_ms));
+        }
+        
+        is_flipped_ = false;
+        MoveReset();
+        SetConversationActive(false);  // **UNBLOCK IMU**
+    }
+
+    void TurnLeftFast() {
+        if (is_flipped_) {
+            ESP_LOGW(TAG, "Cannot perform TurnLeftFast - dog is flipped. Use BackFlipReverse first.");
+            return;
+        }
+        
+        ESP_LOGI(TAG, "Dog: >>> TURN LEFT (FAST) <<<");
+        SetConversationActive(true);  // **BLOCK IMU**
+        
+        const Keyframe keyframes[] = {
+            {.fr = 65.0f, .fl = 65.0f, .br = 245.0f, .bl = 295.0f, .speed = 1000, .delay_ms = 200},
+            {.fr = 65.0f, .fl = 65.0f, .br = 295.0f, .bl = 245.0f, .speed = 1000, .delay_ms = 200},
+            {.fr = 65.0f, .fl = 115.0f, .br = 245.0f, .bl = 245.0f, .speed = 1000, .delay_ms = 200},
+            {.fr = 115.0f, .fl = 65.0f, .br = 245.0f, .bl = 245.0f, .speed = 1000, .delay_ms = 200},
+        };
+        
+        for (const auto& kf : keyframes) {
+            ServoMoveAll(kf.fr, kf.fl, kf.br, kf.bl, kf.speed);
+            vTaskDelay(pdMS_TO_TICKS(kf.delay_ms));
+        }
+        
+        MoveReset();
+        SetConversationActive(false);  // **UNBLOCK IMU**
+    }
+
+    void TurnRightFast() {
+        if (is_flipped_) {
+            ESP_LOGW(TAG, "Cannot perform TurnRightFast - dog is flipped. Use BackFlipReverse first.");
+            return;
+        }
+        
+        ESP_LOGI(TAG, "Dog: >>> TURN RIGHT (FAST) <<<");
+        SetConversationActive(true);  // **BLOCK IMU**
+        
+        const Keyframe keyframes[] = {
+            {.fr = 65.0f, .fl = 65.0f, .br = 295.0f, .bl = 245.0f, .speed = 1000, .delay_ms = 200},
+            {.fr = 65.0f, .fl = 65.0f, .br = 245.0f, .bl = 295.0f, .speed = 1000, .delay_ms = 200},
+            {.fr = 115.0f, .fl = 65.0f, .br = 245.0f, .bl = 245.0f, .speed = 1000, .delay_ms = 200},
+            {.fr = 65.0f, .fl = 115.0f, .br = 245.0f, .bl = 245.0f, .speed = 1000, .delay_ms = 200},
+        };
+        
+        for (const auto& kf : keyframes) {
+            ServoMoveAll(kf.fr, kf.fl, kf.br, kf.bl, kf.speed);
+            vTaskDelay(pdMS_TO_TICKS(kf.delay_ms));
+        }
+        
+        MoveReset();
+        SetConversationActive(false);  // **UNBLOCK IMU**
+    }
+    
+    bool IsInitialized() const { return initialized_; }
 };
 
-// ─────────────────────────────────────────────────────────────
-// HeySantaCodec (unchanged)
-// ─────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════
+// AUDIO CODEC
+// ═══════════════════════════════════════════════════════
 class HeySantaCodec : public SantaAudioCodec  {
 public:
     HeySantaCodec(i2c_master_bus_handle_t i2c_bus, int input_sample_rate, int output_sample_rate,
@@ -783,20 +827,20 @@ public:
 
     virtual void EnableOutput(bool enable) override {
         SantaAudioCodec::EnableOutput(enable);
+        SetConversationActive(enable);  // **BLOCK IMU WHEN SPEAKING**
     }
 };
 
-// ─────────────────────────────────────────────────────────────
-// HeySantaBoard (with robot dog inside!)
-// ─────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════
+// HEYSANTABOARD
+// ═══════════════════════════════════════════════════════
 class HeySantaBoard : public WifiBoard {
 private:
     i2c_master_bus_handle_t i2c_bus_;
-    i2c_master_dev_handle_t imu_device_ = nullptr;
     Button boot_button_;
     Button wake_button_;
     anim::EmojiWidget* display_ = nullptr;
-    Esp32Camera* camera_;
+    Esp32Camera* camera_ = nullptr;
     ServoController servo_controller_;
     ImuController imu_controller_;
     GyroBalanceController gyro_balance_;
@@ -817,14 +861,13 @@ private:
             if (imu_controller_.Read(&imu_data)) {
                 uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
                 float dt = (now - last_imu_time_) / 1000.0f;
-                if (dt <= 0.0f || dt > 1.0f) dt = 0.05f;  // Sanity check
+                if (dt <= 0.0f || dt > 1.0f) dt = 0.05f;
                 last_imu_time_ = now;
                 
-                // Process toggle gesture (X-axis rotation)
                 gyro_balance_.ProcessToggle(imu_data.gyro_x);
                 
-                // If balance is enabled, apply corrections
-                if (gyro_balance_.IsEnabled()) {
+                // **ONLY RUN IF NOT TALKING**
+                if (gyro_balance_.IsEnabled() && !IsConversationActive()) {
                     auto result = gyro_balance_.Calculate(imu_data.gyro_y, dt);
                     servo_controller_.ApplyBalance(result.front_offset, result.back_offset, result.speed);
                 }
@@ -839,7 +882,6 @@ private:
     void InitializeTools() {
         auto& mcp_server = McpServer::GetInstance();
         
-        // Dog movement tools
         mcp_server.AddTool("dog.walk", "Make the robot dog walk forward", PropertyList(), 
             [this](const PropertyList& properties) -> ReturnValue {
                 ESP_LOGI(TAG, "Dog walk command received");
@@ -847,32 +889,32 @@ private:
                 return "Dog walked forward";
             });
         
-        mcp_server.AddTool("dog.turn_left", "Make the robot dog turn left", PropertyList(), 
+        mcp_server.AddTool("dog.double_front_flip", "Make the robot dog do a double front flip (two complete flips, lands upright)", PropertyList(), 
             [this](const PropertyList& properties) -> ReturnValue {
-                ESP_LOGI(TAG, "Dog turn left command received");
-                servo_controller_.TurnLeft(6);
-                return "Dog turned left";
+                ESP_LOGI(TAG, "Dog double front flip command received");
+                servo_controller_.DoubleFrontFlip();
+                return "Dog did double front flip";
             });
         
-        mcp_server.AddTool("dog.turn_right", "Make the robot dog turn right", PropertyList(), 
+        mcp_server.AddTool("dog.front_flip", "Make the robot dog do a front flip (ends upside down, requires BackFlipReverse to recover)", PropertyList(), 
             [this](const PropertyList& properties) -> ReturnValue {
-                ESP_LOGI(TAG, "Dog turn right command received");
-                servo_controller_.TurnRight(6);
-                return "Dog turned right";
-            });
-        
-        mcp_server.AddTool("dog.backflip", "Make the robot dog do a backflip", PropertyList(), 
-            [this](const PropertyList& properties) -> ReturnValue {
-                ESP_LOGI(TAG, "Dog backflip command received");
-                servo_controller_.BackFlip();
-                return "Dog did a backflip";
+                ESP_LOGI(TAG, "Dog front flip command received");
+                servo_controller_.FrontFlip();
+                return "Dog did front flip and is now upside down";
             });
 
-        mcp_server.AddTool("dog.backflip_reverse", "Make the robot dog do a reverse backflip", PropertyList(), 
+        mcp_server.AddTool("dog.back_flip", "Make the robot dog do a back flip (ends upside down, requires BackFlipReverse to recover)", PropertyList(), 
             [this](const PropertyList& properties) -> ReturnValue {
-                ESP_LOGI(TAG, "Dog backflip reverse command received");
+                ESP_LOGI(TAG, "Dog back flip command received");
+                servo_controller_.BackFlip();
+                return "Dog did back flip and is now upside down";
+            });
+
+        mcp_server.AddTool("dog.back_flip_reverse", "Recover from upside-down position after a flip (only works when dog is flipped)", PropertyList(), 
+            [this](const PropertyList& properties) -> ReturnValue {
+                ESP_LOGI(TAG, "Dog back flip reverse command received");
                 servo_controller_.BackFlipReverse();
-                return "Dog did a reverse backflip";
+                return "Dog recovered from upside-down position";
             });
 
         mcp_server.AddTool("dog.pounce", "Make the robot dog pounce", PropertyList(), 
@@ -882,6 +924,20 @@ private:
                 return "Dog pounced";
             });
 
+        mcp_server.AddTool("dog.turn_left_fast", "Make the robot dog turn left quickly", PropertyList(), 
+            [this](const PropertyList& properties) -> ReturnValue {
+                ESP_LOGI(TAG, "Dog turn left fast command received");
+                servo_controller_.TurnLeftFast();
+                return "Dog turned left";
+            });
+
+        mcp_server.AddTool("dog.turn_right_fast", "Make the robot dog turn right quickly", PropertyList(), 
+            [this](const PropertyList& properties) -> ReturnValue {
+                ESP_LOGI(TAG, "Dog turn right fast command received");
+                servo_controller_.TurnRightFast();
+                return "Dog turned right";
+            });
+
         mcp_server.AddTool("dog.reset", "Reset the robot dog to neutral position", PropertyList(), 
             [this](const PropertyList& properties) -> ReturnValue {
                 ESP_LOGI(TAG, "Dog reset command received");
@@ -889,7 +945,7 @@ private:
                 return "Dog reset to neutral";
             });
 
-        mcp_server.AddTool("dog.balance_enable", "Enable gyro balance mode - robot will try to keep legs facing ground", PropertyList(), 
+        mcp_server.AddTool("dog.balance_enable", "Enable gyro balance mode", PropertyList(), 
             [this](const PropertyList& properties) -> ReturnValue {
                 ESP_LOGI(TAG, "Balance enable command received");
                 gyro_balance_.Enable(true);
@@ -900,7 +956,7 @@ private:
             [this](const PropertyList& properties) -> ReturnValue {
                 ESP_LOGI(TAG, "Balance disable command received");
                 gyro_balance_.Enable(false);
-                servo_controller_.MoveToStanceSmooth();
+                servo_controller_.MoveReset();
                 return "Gyro balance mode disabled";
             });
 
@@ -909,43 +965,42 @@ private:
                 bool enabled = gyro_balance_.IsEnabled();
                 bool imu_ok = imu_controller_.IsInitialized();
                 char status[128];
-                snprintf(status, sizeof(status), "Balance mode: %s, IMU: %s", 
+                snprintf(status, sizeof(status), "Balance: %s, IMU: %s (addr: 0x%02X)", 
                          enabled ? "ENABLED" : "DISABLED",
-                         imu_ok ? "OK" : "NOT AVAILABLE");
+                         imu_ok ? "OK" : "NOT AVAILABLE",
+                         imu_controller_.GetAddress());
                 return std::string(status);
             });
 
-        // Audio tool with escaped percent sign
-        mcp_server.AddTool("self.audio.be_quiet", "Make Santa speak more quietly by setting volume to 50%%. Use when user asks Santa to be quiet, silent, or speak softer.", PropertyList(), 
+        mcp_server.AddTool("self.audio.be_quiet", "Make Santa speak more quietly (50% volume)", PropertyList(), 
             [this](const PropertyList& properties) -> ReturnValue {
-                ESP_LOGI(TAG, "BeQuiet command received - setting volume to 50%%");
+                ESP_LOGI(TAG, "BeQuiet command - setting volume to 50%%");
                 auto& board = Board::GetInstance();
                 auto codec = board.GetAudioCodec();
                 if (codec) {
                     codec->SetOutputVolume(50);
-                    ESP_LOGI(TAG, "Volume set to 50%%");
-                    return "Santa will now speak more quietly (volume set to 50%%)";
+                    return "Santa will now speak more quietly (50% volume)";
                 } else {
-                    ESP_LOGW(TAG, "Audio codec not available");
                     return "Audio codec not available";
                 }
             });
 
-        mcp_server.AddTool("self.system.quit", "Quit the application and restart Santa. Use when user says goodbye, wants to end the conversation, or asks Santa to go away.", PropertyList(), 
+        mcp_server.AddTool("self.system.quit", "Quit the application and restart Santa", PropertyList(), 
             [this](const PropertyList& properties) -> ReturnValue {
-                ESP_LOGI(TAG, "Quit command received - sending exit command to server");
+                ESP_LOGI(TAG, "Quit command - sending exit to server");
                 auto& app = Application::GetInstance();
                 app.SendSystemCommand("exit");
-                return "Ho ho ho! Santa is telling the server to end this session. See you soon!";
+                return "Ho ho ho! Santa is ending this session. See you soon!";
             });
     }
 
     void InitializeI2c() {
-        // Initialize a single shared I2C bus for camera, audio codec and IMU
+        ESP_LOGI(TAG, "=== Initializing SINGLE I2C bus on GPIO1/GPIO2 ===");
+        
         i2c_master_bus_config_t i2c_bus_cfg = {
-            .i2c_port = SHARED_I2C_PORT,
-            .sda_io_num = SHARED_I2C_SDA_PIN,
-            .scl_io_num = SHARED_I2C_SCL_PIN,
+            .i2c_port = I2C_NUM_0,
+            .sda_io_num = IMU_SDA_PIN,
+            .scl_io_num = IMU_SCL_PIN,
             .clk_source = I2C_CLK_SRC_DEFAULT,
             .glitch_ignore_cnt = 7,
             .intr_priority = 0,
@@ -954,20 +1009,12 @@ private:
                 .enable_internal_pullup = 1,
             },
         };
-        ESP_ERROR_CHECK(i2c_new_master_bus(&i2c_bus_cfg, &i2c_bus_));
-
-        // Add IMU device to shared bus
-        i2c_device_config_t imu_dev_cfg = {
-            .dev_addr_length = I2C_ADDR_BIT_LEN_7,
-            .device_address = IMU_I2C_ADDR,
-            .scl_speed_hz = SHARED_I2C_FREQ_HZ,
-        };
-        esp_err_t r = i2c_master_bus_add_device(i2c_bus_, &imu_dev_cfg, &imu_device_);
-        if (r == ESP_OK) {
-            ESP_LOGI(TAG, "IMU device added @ 0x%02X on shared I2C port %d", IMU_I2C_ADDR, (int)SHARED_I2C_PORT);
+        
+        esp_err_t ret = i2c_new_master_bus(&i2c_bus_cfg, &i2c_bus_);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to create I2C bus: %s", esp_err_to_name(ret));
         } else {
-            ESP_LOGW(TAG, "Failed to add IMU device on shared I2C bus: %s", esp_err_to_name(r));
-            imu_device_ = nullptr;
+            ESP_LOGI(TAG, "✓ I2C bus created on GPIO1/GPIO2 (shared by IMU + codec + camera)");
         }
     }
 
@@ -1008,7 +1055,7 @@ private:
     }
 
     void InitializeSt7735Display() {
-        ESP_LOGI(TAG, "Initializing ST7735 display (160x80)...");
+        ESP_LOGI(TAG, "Initializing ST7735 display...");
         
         esp_lcd_panel_io_handle_t panel_io = nullptr;
         esp_lcd_panel_handle_t panel = nullptr;
@@ -1039,7 +1086,7 @@ private:
         ESP_ERROR_CHECK(esp_lcd_panel_invert_color(panel, DISPLAY_INVERT_COLOR));
         ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel, true));
         
-        ESP_LOGI(TAG, "ST7735 display initialized successfully");
+        ESP_LOGI(TAG, "✓ Display initialized");
         display_ = new anim::EmojiWidget(panel, panel_io);
     }
 
@@ -1061,7 +1108,7 @@ private:
         config.pin_href = CAMERA_PIN_HREF;
         config.pin_sccb_sda = -1;
         config.pin_sccb_scl = CAMERA_PIN_SIOC;
-        config.sccb_i2c_port = SHARED_I2C_PORT;  // MUST match shared bus port
+        config.sccb_i2c_port = 0;
         config.pin_pwdn = CAMERA_PIN_PWDN;
         config.pin_reset = CAMERA_PIN_RESET;
         config.xclk_freq_hz = XCLK_FREQ_HZ;
@@ -1081,32 +1128,27 @@ public:
         InitializeSpi();
         InitializeSt7735Display();
         InitializeButtons();
-        InitializeCamera();
+        // InitializeCamera();
         servo_controller_.Initialize();
+
+         vTaskDelay(pdMS_TO_TICKS(500));
         
-        // Initialize IMU and start monitoring task (only if enabled)
-#ifdef CONFIG_HEY_SANTA_IMU
-    if (imu_controller_.Initialize(imu_device_)) {
+        if (imu_controller_.Initialize(i2c_bus_)) {
             imu_task_running_ = true;
             last_imu_time_ = xTaskGetTickCount() * portTICK_PERIOD_MS;
             xTaskCreate(ImuTaskWrapper, "imu_task", 4096, this, 5, &imu_task_handle_);
-            ESP_LOGI(TAG, "IMU monitoring task created");
+            ESP_LOGI(TAG, "✓ IMU task started");
         } else {
-            ESP_LOGW(TAG, "IMU initialization failed - balance mode disabled");
+            ESP_LOGW(TAG, "✗ IMU initialization failed - balance mode disabled");
         }
-#else
-        ESP_LOGI(TAG, "IMU disabled in build config - balance mode not available");
-#endif
         
         InitializeTools();
-
         GetBacklight()->RestoreBrightness();
         
-        ESP_LOGI(TAG, "HeySanta board initialized with robot dog + IMU balance!");
+        ESP_LOGI(TAG, "=== HeySanta board initialized! ===");
     }
     
     ~HeySantaBoard() {
-        // Stop IMU task on shutdown
         if (imu_task_running_) {
             imu_task_running_ = false;
             vTaskDelay(pdMS_TO_TICKS(100));
@@ -1115,7 +1157,8 @@ public:
 
     virtual AudioCodec* GetAudioCodec() override {
         static HeySantaCodec audio_codec(i2c_bus_, AUDIO_INPUT_SAMPLE_RATE, AUDIO_OUTPUT_SAMPLE_RATE,
-            AUDIO_I2S_GPIO_MCLK, AUDIO_I2S_GPIO_BCLK, AUDIO_I2S_GPIO_WS, AUDIO_I2S_GPIO_DOUT, AUDIO_I2S_GPIO_DIN, AUDIO_CODEC_ES7210_ADDR, AUDIO_INPUT_REFERENCE);
+            AUDIO_I2S_GPIO_MCLK, AUDIO_I2S_GPIO_BCLK, AUDIO_I2S_GPIO_WS, AUDIO_I2S_GPIO_DOUT, AUDIO_I2S_GPIO_DIN, 
+            AUDIO_CODEC_ES7210_ADDR, AUDIO_INPUT_REFERENCE);
         return &audio_codec;
     }
 
