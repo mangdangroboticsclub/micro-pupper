@@ -7,6 +7,7 @@ idf_component_register(
         "reaction/reaction_config.c"
         "reaction/walk_forward_reaction.c"
         "reaction/gyro_balance.c"
+        "reaction/pressure_balance.c"
         # Different gait implementations
         "gaits/trot_gait.c"
         "gaits/walk_gait.c"

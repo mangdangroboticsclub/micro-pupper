@@ -10,6 +10,9 @@
 // Reaction system (pressure + IMU)
 #include "reaction/reaction_config.h"
 
+// Gyro balance
+#include "reaction/gyro_balance.h"
+
 // Minimal BLE servo control
 #include "ble/ble_servo.h"
 
@@ -23,9 +26,9 @@ static const char *TAG = "ROBOT_MAIN";
 // MODE SELECTION
 // ═══════════════════════════════════════════════════════
 
-#define MODE_BLE        0   // BLE control mode
-#define MODE_DEMO       1   // Crawl gait demo
-#define MODE_REACTION   2   // Pressure + IMU reaction mode
+#define MODE_BLE            0   // BLE control mode
+#define MODE_DEMO           1   // Crawl gait demo
+#define MODE_REACTION       2   // Pressure + IMU reaction mode (combined)
 
 #define RUN_MODE  MODE_REACTION   // <-- Change this to select mode
 
@@ -197,14 +200,19 @@ void app_main(void)
     
 #if RUN_MODE == MODE_REACTION
     // ───────────────────────────────────────────────────────
-    // Reaction Mode: Pressure + IMU triggers walking
+    // Mode 2: Combined Reaction Mode
     // ───────────────────────────────────────────────────────
     ESP_LOGI(TAG, "");
     ESP_LOGI(TAG, "╔═══════════════════════════════════════╗");
-    ESP_LOGI(TAG, "║   Pressure + IMU Reaction Mode        ║");
+    ESP_LOGI(TAG, "║   Mode 2: Combined Reaction Mode      ║");
     ESP_LOGI(TAG, "║                                       ║");
-    ESP_LOGI(TAG, "║   Light push (pressure) → 1 cycle     ║");
-    ESP_LOGI(TAG, "║   Hard push (pressure+IMU) → 3 cycles ║");
+    ESP_LOGI(TAG, "║   Back pressure (BL/BR > 0.3°)        ║");
+    ESP_LOGI(TAG, "║     → Crouch down                     ║");
+    ESP_LOGI(TAG, "║                                       ║");
+    ESP_LOGI(TAG, "║   Front pressure (FL/FR > 0.2°)       ║");
+    ESP_LOGI(TAG, "║     → Walk 1 cycle                    ║");
+    ESP_LOGI(TAG, "║                                       ║");
+    ESP_LOGI(TAG, "║   IMU push → Walk 3 cycles            ║");
     ESP_LOGI(TAG, "╚═══════════════════════════════════════╝");
     ESP_LOGI(TAG, "");
     
@@ -215,7 +223,6 @@ void app_main(void)
     xTaskCreate(reaction_pressure_task, "pressure", 4096, NULL, 5, NULL);
     ESP_LOGI(TAG, "Pressure task created (100Hz)");
     
-    // The IMU reaction runs via the IMU task callback
     // Keep main task alive
     while (1) {
         vTaskDelay(pdMS_TO_TICKS(1000));
@@ -223,13 +230,13 @@ void app_main(void)
     
 #elif RUN_MODE == MODE_DEMO
     // ───────────────────────────────────────────────────────
-    // Demo Mode
+    // Mode 1: Demo Mode
     // ───────────────────────────────────────────────────────
     run_demo_mode();
     
 #else
     // ───────────────────────────────────────────────────────
-    // BLE Mode
+    // Mode 0: BLE Mode
     // ───────────────────────────────────────────────────────
     
     // Initialize crawl gait (for BLE commands)
