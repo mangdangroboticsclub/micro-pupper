@@ -22,7 +22,7 @@
 
 // Animation timing adjustment (added to each keyframe delay)
 // Increase if animation is too fast, decrease if too slow
-#define REACTION_TIMING_OFFSET_MS       100     // milliseconds
+#define REACTION_TIMING_OFFSET_MS       0     // milliseconds
 
 // ═══════════════════════════════════════════════════════
 // PRESSURE THRESHOLDS

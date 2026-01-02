@@ -45,17 +45,17 @@ typedef struct {
 
 static const keyframe_t walk_forward_keyframes[] = {
     // Keyframe 1: Lift FR and BL
-    { .fr = 55,  .fl = 110, .br = 290, .bl = 240, .speed = 1600, .delay = 150 },
+    { .fr = 55,  .fl = 110, .br = 290, .bl = 240, .speed = 1600, .delay = 250 },
     // Keyframe 2: Swing FR and BL forward
-    { .fr = 95,  .fl = 80,  .br = 260, .bl = 285, .speed = 1050, .delay = 150 },
+    { .fr = 95,  .fl = 80,  .br = 260, .bl = 285, .speed = 1050, .delay = 250 },
     // Keyframe 3: Neutral
-    { .fr = 90,  .fl = 90,  .br = 270, .bl = 270, .speed = 1300, .delay = 75  },
+    { .fr = 90,  .fl = 90,  .br = 270, .bl = 270, .speed = 1300, .delay = 80  },
     // Keyframe 4: Lift FL and BR
-    { .fr = 110, .fl = 55,  .br = 240, .bl = 290, .speed = 1600, .delay = 150 },
+    { .fr = 110, .fl = 55,  .br = 240, .bl = 290, .speed = 1600, .delay = 250 },
     // Keyframe 5: Swing FL and BR forward
-    { .fr = 80,  .fl = 95,  .br = 285, .bl = 260, .speed = 950,  .delay = 150 },
+    { .fr = 80,  .fl = 95,  .br = 285, .bl = 260, .speed = 950,  .delay = 250 },
     // Keyframe 6: Neutral
-    { .fr = 90,  .fl = 90,  .br = 270, .bl = 270, .speed = 700,  .delay = 75  },
+    { .fr = 90,  .fl = 90,  .br = 270, .bl = 270, .speed = 700,  .delay = 80  },
 };
 
 #define KEYFRAME_COUNT (sizeof(walk_forward_keyframes) / sizeof(keyframe_t))

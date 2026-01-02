@@ -11,7 +11,7 @@
 
 const BLE_SERVICE_UUID = '0d9be2a0-4757-43d9-83df-704ae274b8df';
 const BLE_CHARACTERISTIC_UUID = '8116d8c0-d45d-4fdf-998e-33ab8c471d59';
-const BLE_DEVICE_NAME = 'MicroPupper';
+const BLE_DEVICE_NAME_PREFIX = 'MicroPupper';
 
 // ═══════════════════════════════════════════════════════
 // STATE
@@ -139,7 +139,7 @@ async function connect() {
         log('Requesting BLE device...');
         
         bleDevice = await navigator.bluetooth.requestDevice({
-            filters: [{ name: BLE_DEVICE_NAME }],
+            filters: [{ namePrefix: BLE_DEVICE_NAME_PREFIX }],
             optionalServices: [BLE_SERVICE_UUID]
         });
         
