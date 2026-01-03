@@ -1028,6 +1028,10 @@ void Application::SendBleMcpResponse(const std::string& response) {
 void Application::ProcessBleTextCommand(const std::string& text) {
     ESP_LOGI(TAG, "🔵 === BLE ProcessBleTextCommand() CALLED ===");
     ESP_LOGI(TAG, "🔵 Input text: '%s' (length: %d)", text.c_str(), (int)text.length());
+
+    ESP_LOGI(TAG, "DISABLED BLE TTS PROCESSING");
+    SendBleTextResponse("error", "BLE TTS processing is disabled");
+    return;
     
     if (text.empty()) {
         ESP_LOGW(TAG, "🔵 Text is empty, not processing");

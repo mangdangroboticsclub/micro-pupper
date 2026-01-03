@@ -548,7 +548,7 @@ const char* BleProtocol::GetDeviceName() {
 #ifdef CONFIG_BT_NIMBLE_SVC_GAP_DEVICE_NAME
     return CONFIG_BT_NIMBLE_SVC_GAP_DEVICE_NAME;
 #else
-    return "Santa-Bot"; // Fallback name
+    return "Mangdang-Bot"; // Fallback name
 #endif
 }
 
