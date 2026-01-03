@@ -120,6 +120,15 @@ LV_FONT_DECLARE(font_awesome_20_4);
 #define GYRO_BALANCE_TOGGLE_WINDOW_MS   1000
 #define GYRO_BALANCE_TOGGLE_COOLDOWN_MS 1500
 
+// ═══════════════════════════════════════════════════════
+// IMU PUSH DETECTION CONFIG (from reaction_config.h)
+// ═══════════════════════════════════════════════════════
+#define PUSH_REACTION_ENABLED_DEFAULT   false   // Disabled by default
+#define REACTION_DELTA_THRESHOLD        3.0f    // m/s² change to detect push
+#define REACTION_MIN_ACCEL              1.0f    // m/s² minimum absolute acceleration
+#define REACTION_COOLDOWN_MS            1600    // Cooldown between reactions
+#define REACTION_WALK_CYCLES            3       // Number of walk cycles on push
+
 struct ImuData {
     float accel_x, accel_y, accel_z;
     float gyro_x, gyro_y, gyro_z;
@@ -144,9 +153,9 @@ static volatile bool g_conversation_active = false;
 void SetConversationActive(bool active) {
     g_conversation_active = active;
     if (active) {
-        ESP_LOGI(TAG, "🔒 CONVERSATION ACTIVE - IMU balance paused");
+        ESP_LOGI(TAG, "🔒 CONVERSATION ACTIVE - IMU processing paused");
     } else {
-        ESP_LOGI(TAG, "🔓 CONVERSATION ENDED - IMU balance resumed");
+        ESP_LOGI(TAG, "🔓 CONVERSATION ENDED - IMU processing resumed");
     }
 }
 
@@ -290,7 +299,7 @@ public:
 // ═══════════════════════════════════════════════════════
 class GyroBalanceController {
 private:
-    bool enabled_ = false;
+    bool enabled_ = GYRO_BALANCE_ENABLED_DEFAULT;
     float accumulated_angle_ = 0.0f;
     float last_correction_ = 0.0f;
     uint32_t last_update_time_ = 0;
@@ -318,56 +327,7 @@ private:
     
 public:
     bool ProcessToggle(float gyro_x) {
-        return false;
-        uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
-        
-        if ((now - last_toggle_time_) < GYRO_BALANCE_TOGGLE_COOLDOWN_MS) {
-            return false;
-        }
-        
-        bool toggled = false;
-        
-        switch (toggle_state_) {
-            case IDLE:
-                if (fabsf(gyro_x) > GYRO_BALANCE_TOGGLE_THRESHOLD) {
-                    toggle_state_ = FIRST_ROTATION;
-                    first_rotation_positive_ = (gyro_x > 0);
-                    first_rotation_time_ = now;
-                }
-                break;
-                
-            case FIRST_ROTATION:
-                if ((now - first_rotation_time_) > GYRO_BALANCE_TOGGLE_WINDOW_MS) {
-                    toggle_state_ = IDLE;
-                } else if (fabsf(gyro_x) < GYRO_BALANCE_TOGGLE_THRESHOLD * 0.5f) {
-                    toggle_state_ = WAITING_REVERSE;
-                }
-                break;
-                
-            case WAITING_REVERSE:
-                if ((now - first_rotation_time_) > GYRO_BALANCE_TOGGLE_WINDOW_MS) {
-                    toggle_state_ = IDLE;
-                } else if (fabsf(gyro_x) > GYRO_BALANCE_TOGGLE_THRESHOLD) {
-                    bool current_positive = (gyro_x > 0);
-                    if (current_positive != first_rotation_positive_) {
-                        enabled_ = !enabled_;
-                        toggled = true;
-                        last_toggle_time_ = now;
-                        toggle_state_ = IDLE;
-                        
-                        accumulated_angle_ = 0.0f;
-                        last_correction_ = 0.0f;
-                        
-                        ESP_LOGI("GyroBalance", "TOGGLE! Balance mode: %s", 
-                                 enabled_ ? "ENABLED" : "DISABLED");
-                    } else {
-                        toggle_state_ = IDLE;
-                    }
-                }
-                break;
-        }
-        
-        return toggled;
+        return false;  // Toggle disabled for now
     }
     
     struct BalanceResult {
@@ -406,16 +366,105 @@ public:
     }
     
     void Enable(bool enable) { 
-        enabled_ = enable;
-        if (!enable) {
-            accumulated_angle_ = 0.0f;
-            last_correction_ = 0.0f;
+        if (enabled_ != enable) {
+            enabled_ = enable;
+            ESP_LOGI(TAG, "⚖️ Gyro balance %s", enable ? "ENABLED" : "DISABLED");
+            if (!enable) {
+                Reset();
+            }
         }
     }
+    
     bool IsEnabled() const { return enabled_; }
+    
     void Reset() { 
         accumulated_angle_ = 0.0f; 
         last_correction_ = 0.0f;
+    }
+};
+
+// ═══════════════════════════════════════════════════════
+// IMU PUSH REACTION CONTROLLER (Delta-based detection)
+// ═══════════════════════════════════════════════════════
+class PushReactionController {
+private:
+    bool enabled_ = PUSH_REACTION_ENABLED_DEFAULT;
+    bool has_prev_reading_ = false;
+    float prev_accel_x_ = 0.0f;
+    uint32_t last_reaction_time_ = 0;
+    
+public:
+    enum PushDirection {
+        PUSH_NONE = 0,
+        PUSH_FRONT = 1,
+        PUSH_BACK = -1
+    };
+    
+    void Enable(bool enable) {
+        if (enabled_ != enable) {
+            enabled_ = enable;
+            ESP_LOGI(TAG, "👋 Push reaction %s", enable ? "ENABLED" : "DISABLED");
+            if (!enable) {
+                Reset();
+            }
+        }
+    }
+    
+    bool IsEnabled() const { return enabled_; }
+    
+    void Reset() {
+        has_prev_reading_ = false;
+        prev_accel_x_ = 0.0f;
+    }
+    
+    bool IsCooldownExpired() const {
+        uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
+        return (now - last_reaction_time_) >= REACTION_COOLDOWN_MS;
+    }
+    
+    void UpdateReactionTime() {
+        last_reaction_time_ = xTaskGetTickCount() * portTICK_PERIOD_MS;
+    }
+    
+    /**
+     * @brief Process IMU data and detect push events
+     * @param accel_x Current X-axis acceleration in m/s²
+     * @return Push direction: PUSH_FRONT, PUSH_BACK, or PUSH_NONE
+     */
+    PushDirection ProcessAccel(float accel_x) {
+        if (!enabled_) {
+            return PUSH_NONE;
+        }
+        
+        if (!has_prev_reading_) {
+            prev_accel_x_ = accel_x;
+            has_prev_reading_ = true;
+            return PUSH_NONE;
+        }
+        
+        float delta = accel_x - prev_accel_x_;
+        prev_accel_x_ = accel_x;
+        
+        // Check cooldown
+        if (!IsCooldownExpired()) {
+            return PUSH_NONE;
+        }
+        
+        // Front push detection (positive delta, positive acceleration)
+        if (delta >= REACTION_DELTA_THRESHOLD && accel_x >= REACTION_MIN_ACCEL) {
+            ESP_LOGI(TAG, "🏃 FRONT PUSH detected! (delta: +%.2f, accel: %.2f)",
+                     delta, accel_x);
+            return PUSH_FRONT;
+        }
+        
+        // Back push detection (negative delta, negative acceleration)
+        if (delta <= -REACTION_DELTA_THRESHOLD && accel_x <= -REACTION_MIN_ACCEL) {
+            ESP_LOGI(TAG, "⬅️ BACK PUSH detected! (delta: %.2f, accel: %.2f)",
+                     delta, accel_x);
+            return PUSH_BACK;
+        }
+        
+        return PUSH_NONE;
     }
 };
 
@@ -427,11 +476,8 @@ private:
     uint16_t default_speed_ = SPEED_MAX;
     bool is_flipped_ = false;
     bool initialized_ = false;
+    volatile bool walk_in_progress_ = false;
 
-    /**
-     * @brief Apply angle reversal for right-side servos
-     * Right-side servos are mounted mirrored, so we reverse angles
-     */
     static float ApplyReversal(uint8_t servo_id, float angle) {
         if (IS_RIGHT_SIDE(servo_id)) {
             return REVERSE_ANGLE(angle);
@@ -439,9 +485,6 @@ private:
         return angle;
     }
 
-    /**
-     * @brief Get base stance angle for a servo (before reversal)
-     */
     static float GetBaseStance(uint8_t servo_id) {
         if (IS_FRONT_LEG(servo_id)) {
             return STANCE_FRONT;
@@ -450,9 +493,6 @@ private:
         }
     }
 
-    /**
-     * @brief Calculate dynamic speed based on angle delta
-     */
     static uint16_t CalculateDynamicSpeed(float angle_delta) {
         float abs_delta = fabsf(angle_delta);
         float speed_ratio = abs_delta / STANCE_SPEED_THRESHOLD;
@@ -461,39 +501,23 @@ private:
             speed_ratio = 1.0f;
         }
         
-        // Apply power curve to bias toward lower speeds
         speed_ratio = powf(speed_ratio, STANCE_SPEED_CURVE);
         
         return (uint16_t)(STANCE_SPEED_MIN + 
                           speed_ratio * (STANCE_SPEED_MAX - STANCE_SPEED_MIN));
     }
 
-    /**
-     * @brief Move a single servo with automatic reversal for right side
-     */
     void ServoMove(uint8_t servo_id, float angle, uint16_t speed) {
         float actual_angle = ApplyReversal(servo_id, angle);
         sts_servo_set_angle(servo_id, actual_angle, speed);
     }
 
-    /**
-     * @brief Move all servos with automatic reversal for right side
-     * @param angle_fr Front-right angle (from left perspective, will be reversed)
-     * @param angle_fl Front-left angle
-     * @param angle_br Back-right angle (from left perspective, will be reversed)
-     * @param angle_bl Back-left angle
-     * @param speed Movement speed
-     */
     void ServoMoveAll(float angle_fr, float angle_fl, float angle_br, float angle_bl, uint16_t speed) {
-        // Apply reversal to right-side servos
         float actual_fr = ApplyReversal(SERVO_FR, angle_fr);
         float actual_br = ApplyReversal(SERVO_BR, angle_br);
-        
-        // Left side uses angles directly
         float actual_fl = angle_fl;
         float actual_bl = angle_bl;
         
-        // Move all servos using sts3032 driver
         sts_servo_set_angle(SERVO_FR, actual_fr, speed);
         sts_servo_set_angle(SERVO_FL, actual_fl, speed);
         sts_servo_set_angle(SERVO_BR, actual_br, speed);
@@ -504,7 +528,6 @@ public:
     void Initialize() {
         ESP_LOGI(TAG, "Initializing servo controller using sts3032 driver...");
         
-        // Initialize the servo protocol using sts3032 driver
         sts_protocol_config_t protocol_config = {
             .uart_num = SERVO_UART_NUM,
             .tx_pin = SERVO_TX_PIN,
@@ -522,14 +545,12 @@ public:
         ESP_LOGI(TAG, "Servo protocol initialized");
         vTaskDelay(pdMS_TO_TICKS(100));
         
-        // Check all servos
         ESP_LOGI(TAG, "Checking servos...");
         int found = sts_servo_scan_bus(1, SERVO_COUNT);
         if (found < SERVO_COUNT) {
             ESP_LOGW(TAG, "Only %d of %d servos responding", found, SERVO_COUNT);
         }
         
-        // Enable torque on all servos
         ESP_LOGI(TAG, "Enabling servo torque...");
         for (uint8_t id = 1; id <= SERVO_COUNT; id++) {
             sts_servo_enable_torque(id, true);
@@ -546,12 +567,11 @@ public:
     void MoveInit() {
         ESP_LOGI(TAG, "Dog: Moving to stance position");
         
-        // Use unified angles - reversal happens automatically
         ServoMoveAll(
-            STANCE_FRONT,  // FR
-            STANCE_FRONT,  // FL
-            STANCE_BACK,   // BR
-            STANCE_BACK,   // BL
+            STANCE_FRONT,
+            STANCE_FRONT,
+            STANCE_BACK,
+            STANCE_BACK,
             default_speed_
         );
         
@@ -560,62 +580,53 @@ public:
 
     void MoveReset() {
         ESP_LOGI(TAG, "Dog: Resetting to stance (flipped: %s)", is_flipped_ ? "yes" : "no");
-        SetConversationActive(true);  // **BLOCK IMU**
+        SetConversationActive(true);
         
         if (is_flipped_) {
-            // When flipped, front legs use back stance and back legs use front stance
             ServoMoveAll(
-                STANCE_BACK,   // FR
-                STANCE_BACK,   // FL
-                STANCE_FRONT,  // BR
-                STANCE_FRONT,  // BL
+                STANCE_BACK,
+                STANCE_BACK,
+                STANCE_FRONT,
+                STANCE_FRONT,
                 default_speed_
             );
         } else {
-            // Normal orientation
             ServoMoveAll(
-                STANCE_FRONT,  // FR
-                STANCE_FRONT,  // FL
-                STANCE_BACK,   // BR
-                STANCE_BACK,   // BL
+                STANCE_FRONT,
+                STANCE_FRONT,
+                STANCE_BACK,
+                STANCE_BACK,
                 default_speed_
             );
         }
         
         vTaskDelay(pdMS_TO_TICKS(1000));
-        SetConversationActive(false);  // **UNBLOCK IMU**
+        SetConversationActive(false);
     }
 
     void ApplyBalance(float front_offset, float back_offset, uint16_t speed) {
-        if (IsConversationActive()) return;  // **CHECK CONVERSATION LOCK**
+        if (IsConversationActive()) return;
+        if (walk_in_progress_) return;
         
-        // Apply balance offsets to stance angles
         float front_angle = STANCE_FRONT + front_offset;
         float back_angle = STANCE_BACK - back_offset;
         
         ServoMoveAll(front_angle, front_angle, back_angle, back_angle, speed);
     }
+    
+    bool IsWalkInProgress() const { return walk_in_progress_; }
 
-    // ═══════════════════════════════════════════════════════
-    // MOVEMENT SEQUENCES
-    // ═══════════════════════════════════════════════════════
     void WalkForward(int loops = 3) {
-        ESP_LOGI(TAG, "Dog: >>> WALKING FORWARD <<<");
-        SetConversationActive(true);  // **BLOCK IMU**
-        // Walk cycle implemented as keyframes (FR, FL, BR, BL)
-
+        ESP_LOGI(TAG, "Dog: >>> WALKING FORWARD (%d loops) <<<", loops);
+        SetConversationActive(true);
+        walk_in_progress_ = true;
+        
         Keyframe walk_keyframes[] = {
-            // Keyframe 1: Lift FR and BL
             { .fr = 55,  .fl = 110, .br = 290, .bl = 240, .speed = 1600, .delay_ms = 250 },
-            // Keyframe 2: Swing FR and BL forward
             { .fr = 95,  .fl = 80,  .br = 260, .bl = 285, .speed = 1050, .delay_ms = 250 },
-            // Keyframe 3: Neutral
             { .fr = 90,  .fl = 90,  .br = 270, .bl = 270, .speed = 1300, .delay_ms = 80  },
-            // Keyframe 4: Lift FL and BR
             { .fr = 110, .fl = 55,  .br = 240, .bl = 290, .speed = 1600, .delay_ms = 250 },
-            // Keyframe 5: Swing FL and BR forward
             { .fr = 80,  .fl = 95,  .br = 285, .bl = 260, .speed = 950,  .delay_ms = 250 },
-            // Keyframe 6: Neutral
             { .fr = 90,  .fl = 90,  .br = 270, .bl = 270, .speed = 700,  .delay_ms = 80  },
         };
 
@@ -628,8 +639,10 @@ public:
                 vTaskDelay(pdMS_TO_TICKS(kf.delay_ms));
             }
         }
+        
+        walk_in_progress_ = false;
         MoveReset();
-        SetConversationActive(false);  // **UNBLOCK IMU**
+        SetConversationActive(false);
     }
 
     void DoubleFrontFlip() {
@@ -639,7 +652,7 @@ public:
         }
         
         ESP_LOGI(TAG, "Dog: >>> DOUBLE FRONT FLIP <<<");
-        SetConversationActive(true);  // **BLOCK IMU**
+        SetConversationActive(true);
         
         const Keyframe keyframes[] = {
             {.fr = 80.0f, .fl = 80.0f, .br = 260.0f, .bl = 260.0f, .speed = 2000, .delay_ms = 164},
@@ -657,7 +670,7 @@ public:
         }
         
         MoveReset();
-        SetConversationActive(false);  // **UNBLOCK IMU**
+        SetConversationActive(false);
     }
 
     void FrontFlip() {
@@ -667,7 +680,7 @@ public:
         }
         
         ESP_LOGI(TAG, "Dog: >>> FRONT FLIP <<<");
-        SetConversationActive(true);  // **BLOCK IMU**
+        SetConversationActive(true);
         
         const Keyframe keyframes[] = {
             {.fr = 80.0f, .fl = 80.0f, .br = 260.0f, .bl = 260.0f, .speed = 200, .delay_ms = 164},
@@ -683,7 +696,7 @@ public:
         
         is_flipped_ = true;
         MoveReset();
-        SetConversationActive(false);  // **UNBLOCK IMU**
+        SetConversationActive(false);
     }
 
     void Pounce() {
@@ -693,7 +706,7 @@ public:
         }
         
         ESP_LOGI(TAG, "Dog: >>> POUNCE <<<");
-        SetConversationActive(true);  // **BLOCK IMU**
+        SetConversationActive(true);
         
         const Keyframe keyframes[] = {
             {.fr = 90.0f, .fl = 90.0f, .br = 270.0f, .bl = 270.0f, .speed = 2400, .delay_ms = 207},
@@ -708,7 +721,7 @@ public:
         }
         
         MoveReset();
-        SetConversationActive(false);  // **UNBLOCK IMU**
+        SetConversationActive(false);
     }
 
     void BackFlip() {
@@ -718,7 +731,7 @@ public:
         }
         
         ESP_LOGI(TAG, "Dog: >>> BACK FLIP <<<");
-        SetConversationActive(true);  // **BLOCK IMU**
+        SetConversationActive(true);
         
         const Keyframe keyframes[] = {
             {.fr = 80.0f, .fl = 80.0f, .br = 260.0f, .bl = 260.0f, .speed = 4095, .delay_ms = 164},
@@ -734,7 +747,7 @@ public:
         
         is_flipped_ = true;
         MoveReset();
-        SetConversationActive(false);  // **UNBLOCK IMU**
+        SetConversationActive(false);
     }
 
     void BackFlipReverse() {
@@ -744,7 +757,7 @@ public:
         }
         
         ESP_LOGI(TAG, "Dog: >>> BACK FLIP REVERSE <<<");
-        SetConversationActive(true);  // **BLOCK IMU**
+        SetConversationActive(true);
         
         const Keyframe keyframes[] = {
             {.fr = 260.0f, .fl = 260.0f, .br = 80.0f, .bl = 80.0f, .speed = 4095, .delay_ms = 164},
@@ -760,7 +773,7 @@ public:
         
         is_flipped_ = false;
         MoveReset();
-        SetConversationActive(false);  // **UNBLOCK IMU**
+        SetConversationActive(false);
     }
 
     void TurnLeftFast() {
@@ -770,7 +783,7 @@ public:
         }
         
         ESP_LOGI(TAG, "Dog: >>> TURN LEFT (FAST) <<<");
-        SetConversationActive(true);  // **BLOCK IMU**
+        SetConversationActive(true);
         
         const Keyframe keyframes[] = {
             {.fr = 65.0f, .fl = 65.0f, .br = 245.0f, .bl = 295.0f, .speed = 700, .delay_ms = 300},
@@ -785,7 +798,7 @@ public:
         }
         
         MoveReset();
-        SetConversationActive(false);  // **UNBLOCK IMU**
+        SetConversationActive(false);
     }
 
     void TurnRightFast() {
@@ -795,7 +808,7 @@ public:
         }
         
         ESP_LOGI(TAG, "Dog: >>> TURN RIGHT (FAST) <<<");
-        SetConversationActive(true);  // **BLOCK IMU**
+        SetConversationActive(true);
         
         const Keyframe keyframes[] = {
             {.fr = 65.0f, .fl = 65.0f, .br = 295.0f, .bl = 245.0f, .speed = 700, .delay_ms = 300},
@@ -810,12 +823,12 @@ public:
         }
         
         MoveReset();
-        SetConversationActive(false);  // **UNBLOCK IMU**
+        SetConversationActive(false);
     }
     
     void SitAndStand(uint32_t sit_time_ms) {
         ESP_LOGI(TAG, "Dog: >>> SIT & STAND <<< (sit_time_ms=%u)", (unsigned int)sit_time_ms);
-        SetConversationActive(true);  // **BLOCK IMU**
+        SetConversationActive(true);
 
         const Keyframe keyframes[] = {
             {.fr = 70.0f,  .fl = 70.0f,  .br = 325.0f, .bl = 325.0f, .speed = 1000, .delay_ms = (uint16_t)sit_time_ms},
@@ -831,10 +844,11 @@ public:
         }
 
         MoveReset();
-        SetConversationActive(false);  // **UNBLOCK IMU**
+        SetConversationActive(false);
     }
 
     bool IsInitialized() const { return initialized_; }
+    bool IsFlipped() const { return is_flipped_; }
 };
 
 // ═══════════════════════════════════════════════════════
@@ -849,7 +863,7 @@ public:
 
     virtual void EnableOutput(bool enable) override {
         SantaAudioCodec::EnableOutput(enable);
-        SetConversationActive(enable);  // **BLOCK IMU WHEN SPEAKING**
+        SetConversationActive(enable);
     }
 };
 
@@ -866,6 +880,7 @@ private:
     ServoController servo_controller_;
     ImuController imu_controller_;
     GyroBalanceController gyro_balance_;
+    PushReactionController push_reaction_;
     TaskHandle_t imu_task_handle_ = nullptr;
     bool imu_task_running_ = false;
     uint32_t last_imu_time_ = 0;
@@ -876,6 +891,12 @@ private:
 
     void ImuTask() {
         ESP_LOGI(TAG, "IMU monitoring task started");
+        ESP_LOGI(TAG, "  Push reaction: %s (delta=%.1f m/s², min=%.1f m/s², cooldown=%dms)",
+                 PUSH_REACTION_ENABLED_DEFAULT ? "ENABLED" : "DISABLED",
+                 REACTION_DELTA_THRESHOLD, REACTION_MIN_ACCEL, REACTION_COOLDOWN_MS);
+        ESP_LOGI(TAG, "  Gyro balance: %s",
+                 GYRO_BALANCE_ENABLED_DEFAULT ? "ENABLED" : "DISABLED");
+        
         const TickType_t interval = pdMS_TO_TICKS(IMU_UPDATE_INTERVAL_MS);
         ImuData imu_data;
         
@@ -886,10 +907,34 @@ private:
                 if (dt <= 0.0f || dt > 1.0f) dt = 0.05f;
                 last_imu_time_ = now;
                 
-                gyro_balance_.ProcessToggle(imu_data.gyro_x);
+                // Skip all processing if conversation active or walk in progress
+                if (IsConversationActive() || servo_controller_.IsWalkInProgress()) {
+                    vTaskDelay(interval);
+                    continue;
+                }
                 
-                // **ONLY RUN IF NOT TALKING**
-                if (gyro_balance_.IsEnabled() && !IsConversationActive()) {
+                // ═══════════════════════════════════════════════════
+                // PUSH REACTION (only if enabled and balance is off)
+                // ═══════════════════════════════════════════════════
+                if (push_reaction_.IsEnabled() && !gyro_balance_.IsEnabled()) {
+                    PushReactionController::PushDirection push = push_reaction_.ProcessAccel(imu_data.accel_x);
+                    
+                    if (push != PushReactionController::PUSH_NONE) {
+                        push_reaction_.UpdateReactionTime();
+                        
+                        ESP_LOGI(TAG, "🚶 Triggering walk forward (%d cycles) from push",
+                                 REACTION_WALK_CYCLES);
+                        servo_controller_.WalkForward(REACTION_WALK_CYCLES);
+                        
+                        vTaskDelay(interval);
+                        continue;
+                    }
+                }
+                
+                // ═══════════════════════════════════════════════════
+                // GYRO BALANCE (only if enabled)
+                // ═══════════════════════════════════════════════════
+                if (gyro_balance_.IsEnabled()) {
                     auto result = gyro_balance_.Calculate(imu_data.gyro_y, dt);
                     servo_controller_.ApplyBalance(result.front_offset, result.back_offset, result.speed);
                 }
@@ -983,11 +1028,14 @@ private:
                 return "Dog performed Sit&Stand";
             });
 
-        mcp_server.AddTool("dog.balance_enable", "Enable gyro balance mode", PropertyList(), 
+        // ═══════════════════════════════════════════════════════
+        // GYRO BALANCE TOOLS
+        // ═══════════════════════════════════════════════════════
+        mcp_server.AddTool("dog.balance_enable", "Enable gyro balance mode (disables push reaction)", PropertyList(), 
             [this](const PropertyList& properties) -> ReturnValue {
                 ESP_LOGI(TAG, "Balance enable command received");
                 gyro_balance_.Enable(true);
-                return "Gyro balance mode enabled";
+                return "Gyro balance mode enabled (push reaction disabled while active)";
             });
 
         mcp_server.AddTool("dog.balance_disable", "Disable gyro balance mode", PropertyList(), 
@@ -1000,13 +1048,49 @@ private:
 
         mcp_server.AddTool("dog.balance_status", "Get current gyro balance mode status", PropertyList(), 
             [this](const PropertyList& properties) -> ReturnValue {
-                bool enabled = gyro_balance_.IsEnabled();
+                bool balance_enabled = gyro_balance_.IsEnabled();
+                bool push_enabled = push_reaction_.IsEnabled();
                 bool imu_ok = imu_controller_.IsInitialized();
-                char status[128];
-                snprintf(status, sizeof(status), "Balance: %s, IMU: %s (addr: 0x%02X)", 
-                         enabled ? "ENABLED" : "DISABLED",
+                char status[256];
+                snprintf(status, sizeof(status), 
+                         "Balance: %s, Push reaction: %s, IMU: %s (addr: 0x%02X)", 
+                         balance_enabled ? "ENABLED" : "DISABLED",
+                         push_enabled ? "ENABLED" : "DISABLED",
                          imu_ok ? "OK" : "NOT AVAILABLE",
                          imu_controller_.GetAddress());
+                return std::string(status);
+            });
+
+        // ═══════════════════════════════════════════════════════
+        // PUSH REACTION TOOLS
+        // ═══════════════════════════════════════════════════════
+        mcp_server.AddTool("dog.push_reaction_enable", "Enable automatic walk-on-push reaction via IMU", PropertyList(), 
+            [this](const PropertyList& properties) -> ReturnValue {
+                ESP_LOGI(TAG, "Push reaction enable command received");
+                push_reaction_.Enable(true);
+                return "Push reaction enabled - dog will walk when pushed (disabled while balance mode is active)";
+            });
+
+        mcp_server.AddTool("dog.push_reaction_disable", "Disable automatic walk-on-push reaction via IMU", PropertyList(), 
+            [this](const PropertyList& properties) -> ReturnValue {
+                ESP_LOGI(TAG, "Push reaction disable command received");
+                push_reaction_.Enable(false);
+                return "Push reaction disabled";
+            });
+
+        mcp_server.AddTool("dog.push_reaction_status", "Get current push reaction status", PropertyList(), 
+            [this](const PropertyList& properties) -> ReturnValue {
+                bool enabled = push_reaction_.IsEnabled();
+                bool balance_active = gyro_balance_.IsEnabled();
+                bool cooldown_ok = push_reaction_.IsCooldownExpired();
+                char status[256];
+                snprintf(status, sizeof(status), 
+                         "Push reaction: %s, Active: %s, Ready: %s, Threshold: %.1f m/s², Cooldown: %dms",
+                         enabled ? "ENABLED" : "DISABLED",
+                         (enabled && !balance_active) ? "YES" : "NO (balance mode active)",
+                         cooldown_ok ? "YES" : "COOLING DOWN",
+                         REACTION_DELTA_THRESHOLD,
+                         REACTION_COOLDOWN_MS);
                 return std::string(status);
             });
 
@@ -1169,7 +1253,7 @@ public:
         // InitializeCamera();
         servo_controller_.Initialize();
 
-         vTaskDelay(pdMS_TO_TICKS(500));
+        vTaskDelay(pdMS_TO_TICKS(500));
         
         if (imu_controller_.Initialize(i2c_bus_)) {
             imu_task_running_ = true;
@@ -1177,13 +1261,18 @@ public:
             xTaskCreate(ImuTaskWrapper, "imu_task", 4096, this, 5, &imu_task_handle_);
             ESP_LOGI(TAG, "✓ IMU task started");
         } else {
-            ESP_LOGW(TAG, "✗ IMU initialization failed - balance mode disabled");
+            ESP_LOGW(TAG, "✗ IMU initialization failed - balance and push reaction disabled");
         }
         
         InitializeTools();
         GetBacklight()->RestoreBrightness();
         
-        ESP_LOGI(TAG, "=== HeySanta board initialized! ===");
+        ESP_LOGI(TAG, "═══════════════════════════════════════════");
+        ESP_LOGI(TAG, "HeySanta board initialized!");
+        ESP_LOGI(TAG, "  Gyro balance:   %s", GYRO_BALANCE_ENABLED_DEFAULT ? "ENABLED" : "DISABLED");
+        ESP_LOGI(TAG, "  Push reaction:  %s", PUSH_REACTION_ENABLED_DEFAULT ? "ENABLED" : "DISABLED");
+        ESP_LOGI(TAG, "  Use MCP tools to enable/disable features");
+        ESP_LOGI(TAG, "═══════════════════════════════════════════");
     }
     
     ~HeySantaBoard() {
