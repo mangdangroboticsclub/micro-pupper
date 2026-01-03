@@ -642,12 +642,13 @@ public:
         SetConversationActive(true);  // **BLOCK IMU**
         
         const Keyframe keyframes[] = {
-            {.fr = 90.0f, .fl = 90.0f, .br = 270.0f, .bl = 270.0f, .speed = 4095, .delay_ms = 160},
-            {.fr = 30.0f, .fl = 30.0f, .br = 290.0f, .bl = 290.0f, .speed = 4095, .delay_ms = 300},
-            {.fr = 40.0f, .fl = 40.0f, .br = 140.0f, .bl = 140.0f, .speed = 4095, .delay_ms = 190},
-            {.fr = 270.0f, .fl = 270.0f, .br = 90.0f, .bl = 90.0f, .speed = 4095, .delay_ms = 300},
-            {.fr = 290.0f, .fl = 290.0f, .br = 45.0f, .bl = 45.0f, .speed = 4095, .delay_ms = 300},
-            {.fr = 90.0f, .fl = 90.0f, .br = 270.0f, .bl = 270.0f, .speed = 4095, .delay_ms = 300},
+            {.fr = 80.0f, .fl = 80.0f, .br = 260.0f, .bl = 260.0f, .speed = 2000, .delay_ms = 164},
+            {.fr = 50.0f, .fl = 50.0f, .br = 275.0f, .bl = 275.0f, .speed = 2000, .delay_ms = 304},
+            {.fr = 20.0f, .fl = 20.0f, .br = 230.0f, .bl = 230.0f, .speed = 2095, .delay_ms = 304},
+            {.fr = 260.0f, .fl = 260.0f, .br = 80.0f, .bl = 80.0f, .speed = 2700, .delay_ms = 450},
+            {.fr = 260.0f, .fl = 260.0f, .br = 80.0f, .bl = 80.0f, .speed = 2700, .delay_ms = 164},
+            {.fr = 190.0f, .fl = 190.0f, .br = 30.0f, .bl = 30.0f, .speed = 2095, .delay_ms = 304},
+            {.fr = 80.0f, .fl = 80.0f, .br = 260.0f, .bl = 260.0f, .speed = 4095, .delay_ms = 304},
         };
         
         for (const auto& kf : keyframes) {
@@ -669,10 +670,10 @@ public:
         SetConversationActive(true);  // **BLOCK IMU**
         
         const Keyframe keyframes[] = {
-            {.fr = 90.0f, .fl = 90.0f, .br = 270.0f, .bl = 270.0f, .speed = 4095, .delay_ms = 160},
-            {.fr = 30.0f, .fl = 30.0f, .br = 300.0f, .bl = 300.0f, .speed = 4095, .delay_ms = 300},
-            {.fr = 40.0f, .fl = 40.0f, .br = 140.0f, .bl = 140.0f, .speed = 4095, .delay_ms = 190},
-            {.fr = 270.0f, .fl = 270.0f, .br = 90.0f, .bl = 90.0f, .speed = 4095, .delay_ms = 300},
+            {.fr = 80.0f, .fl = 80.0f, .br = 260.0f, .bl = 260.0f, .speed = 200, .delay_ms = 164},
+            {.fr = 50.0f, .fl = 50.0f, .br = 275.0f, .bl = 275.0f, .speed = 2000, .delay_ms = 304},
+            {.fr = 20.0f, .fl = 20.0f, .br = 230.0f, .bl = 230.0f, .speed = 2095, .delay_ms = 304},
+            {.fr = 260.0f, .fl = 260.0f, .br = 80.0f, .bl = 80.0f, .speed = 2700, .delay_ms = 304},
         };
         
         for (const auto& kf : keyframes) {
@@ -695,10 +696,10 @@ public:
         SetConversationActive(true);  // **BLOCK IMU**
         
         const Keyframe keyframes[] = {
-            {.fr = 90.0f, .fl = 90.0f, .br = 270.0f, .bl = 270.0f, .speed = 4095, .delay_ms = 207},
-            {.fr = 80.0f, .fl = 80.0f, .br = 290.0f, .bl = 290.0f, .speed = 4095, .delay_ms = 313},
-            {.fr = 140.0f, .fl = 140.0f, .br = 230.0f, .bl = 230.0f, .speed = 4095, .delay_ms = 200},
-            {.fr = 90.0f, .fl = 90.0f, .br = 270.0f, .bl = 270.0f, .speed = 4095, .delay_ms = 260},
+            {.fr = 90.0f, .fl = 90.0f, .br = 270.0f, .bl = 270.0f, .speed = 2400, .delay_ms = 207},
+            {.fr = 80.0f, .fl = 80.0f, .br = 290.0f, .bl = 290.0f, .speed = 2400, .delay_ms = 313},
+            {.fr = 140.0f, .fl = 140.0f, .br = 230.0f, .bl = 230.0f, .speed = 2400, .delay_ms = 200},
+            {.fr = 90.0f, .fl = 90.0f, .br = 270.0f, .bl = 270.0f, .speed = 2400, .delay_ms = 260},
         };
         
         for (const auto& kf : keyframes) {
@@ -772,10 +773,10 @@ public:
         SetConversationActive(true);  // **BLOCK IMU**
         
         const Keyframe keyframes[] = {
-            {.fr = 65.0f, .fl = 65.0f, .br = 245.0f, .bl = 295.0f, .speed = 1000, .delay_ms = 200},
-            {.fr = 65.0f, .fl = 65.0f, .br = 295.0f, .bl = 245.0f, .speed = 1000, .delay_ms = 200},
-            {.fr = 65.0f, .fl = 115.0f, .br = 245.0f, .bl = 245.0f, .speed = 1000, .delay_ms = 200},
-            {.fr = 115.0f, .fl = 65.0f, .br = 245.0f, .bl = 245.0f, .speed = 1000, .delay_ms = 200},
+            {.fr = 65.0f, .fl = 65.0f, .br = 245.0f, .bl = 295.0f, .speed = 700, .delay_ms = 300},
+            {.fr = 65.0f, .fl = 65.0f, .br = 295.0f, .bl = 245.0f, .speed = 700, .delay_ms = 300},
+            {.fr = 65.0f, .fl = 115.0f, .br = 245.0f, .bl = 245.0f, .speed = 700, .delay_ms = 300},
+            {.fr = 115.0f, .fl = 65.0f, .br = 245.0f, .bl = 245.0f, .speed = 700, .delay_ms = 300},
         };
         
         for (const auto& kf : keyframes) {
@@ -797,10 +798,10 @@ public:
         SetConversationActive(true);  // **BLOCK IMU**
         
         const Keyframe keyframes[] = {
-            {.fr = 65.0f, .fl = 65.0f, .br = 295.0f, .bl = 245.0f, .speed = 1000, .delay_ms = 200},
-            {.fr = 65.0f, .fl = 65.0f, .br = 245.0f, .bl = 295.0f, .speed = 1000, .delay_ms = 200},
-            {.fr = 115.0f, .fl = 65.0f, .br = 245.0f, .bl = 245.0f, .speed = 1000, .delay_ms = 200},
-            {.fr = 65.0f, .fl = 115.0f, .br = 245.0f, .bl = 245.0f, .speed = 1000, .delay_ms = 200},
+            {.fr = 65.0f, .fl = 65.0f, .br = 295.0f, .bl = 245.0f, .speed = 700, .delay_ms = 300},
+            {.fr = 65.0f, .fl = 65.0f, .br = 245.0f, .bl = 295.0f, .speed = 700, .delay_ms = 300},
+            {.fr = 115.0f, .fl = 65.0f, .br = 245.0f, .bl = 245.0f, .speed = 700, .delay_ms = 300},
+            {.fr = 65.0f, .fl = 115.0f, .br = 245.0f, .bl = 245.0f, .speed = 700, .delay_ms = 300},
         };
         
         for (const auto& kf : keyframes) {
@@ -812,6 +813,27 @@ public:
         SetConversationActive(false);  // **UNBLOCK IMU**
     }
     
+    void SitAndStand(uint32_t sit_time_ms) {
+        ESP_LOGI(TAG, "Dog: >>> SIT & STAND <<< (sit_time_ms=%u)", sit_time_ms);
+        SetConversationActive(true);  // **BLOCK IMU**
+
+        const Keyframe keyframes[] = {
+            {.fr = 70.0f,  .fl = 70.0f,  .br = 325.0f, .bl = 325.0f, .speed = 1000, .delay_ms = (uint16_t)sit_time_ms},
+            {.fr = 170.0f, .fl = 170.0f, .br = 310.0f, .bl = 310.0f, .speed = 1200, .delay_ms = 400},
+            {.fr = 90.0f,  .fl = 90.0f,  .br = 270.0f, .bl = 270.0f, .speed = 800,  .delay_ms = 300},
+        };
+
+        const int kf_count = sizeof(keyframes) / sizeof(keyframes[0]);
+        for (int i = 0; i < kf_count; ++i) {
+            const Keyframe &kf = keyframes[i];
+            ServoMoveAll(kf.fr, kf.fl, kf.br, kf.bl, kf.speed);
+            vTaskDelay(pdMS_TO_TICKS(kf.delay_ms));
+        }
+
+        MoveReset();
+        SetConversationActive(false);  // **UNBLOCK IMU**
+    }
+
     bool IsInitialized() const { return initialized_; }
 };
 
@@ -950,6 +972,15 @@ private:
                 ESP_LOGI(TAG, "Dog reset command received");
                 servo_controller_.MoveReset();
                 return "Dog reset to neutral";
+            });
+
+        mcp_server.AddTool("dog.sit_and_stand", "Make the robot dog sit then stand (Sit&Stand)", PropertyList({Property("sit_time_ms", kPropertyTypeInteger, 1000, 0, 60000)}),
+            [this](const PropertyList& properties) -> ReturnValue {
+                ESP_LOGI(TAG, "Dog Sit&Stand command received");
+                int sit_ms = properties["sit_time_ms"].value<int>();
+                if (sit_ms < 0) sit_ms = 0;
+                servo_controller_.SitAndStand((uint32_t)sit_ms);
+                return "Dog performed Sit&Stand";
             });
 
         mcp_server.AddTool("dog.balance_enable", "Enable gyro balance mode", PropertyList(), 
