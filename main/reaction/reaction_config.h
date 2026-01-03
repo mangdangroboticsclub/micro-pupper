@@ -12,7 +12,7 @@
 
 // Minimum delta (change) in accel_x to detect a push (m/s² per sample)
 // This is the difference between current and previous reading
-#define REACTION_DELTA_THRESHOLD        9000.0f    // m/s² change
+#define REACTION_DELTA_THRESHOLD        3.0f    // m/s² change
 
 // Minimum absolute acceleration to consider (filters out noise deltas)
 #define REACTION_MIN_ACCEL              1.0f    // m/s²

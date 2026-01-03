@@ -29,7 +29,7 @@
 #define GYRO_BALANCE_GAIN                   1.6f
 
 // Low-pass filter coefficient (0.0-1.0)
-#define GYRO_BALANCE_SMOOTHING              0.3f
+#define GYRO_BALANCE_SMOOTHING              0.35f
 
 // Update rate for stabilization (ms)
 #define GYRO_BALANCE_UPDATE_INTERVAL_MS     50

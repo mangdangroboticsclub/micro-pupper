@@ -17,7 +17,7 @@
 // ═══════════════════════════════════════════════════════
 
 // Enable/disable at startup
-#define PRESSURE_BALANCE_ENABLED_DEFAULT    true
+#define PRESSURE_BALANCE_ENABLED_DEFAULT    false
 
 // Pressure threshold (position error in degrees)
 #define PRESSURE_BALANCE_THRESHOLD          0.25f

@@ -12,7 +12,7 @@ static const char *TAG = "PRES_BAL";
 // CONFIGURATION
 // ═══════════════════════════════════════════════════════
 
-#define PRESSURE_THRESHOLD          0.3f    // Degrees of error to trigger
+#define PRESSURE_THRESHOLD          0.0f    // Degrees of error to trigger
 #define PRESSURE_CROUCH_AMOUNT     35.0f    // How much back legs go down
 #define PRESSURE_CROUCH_SPEED       500     // Speed to crouch down
 #define PRESSURE_RETURN_SPEED       500     // Speed to return to stance
@@ -246,7 +246,7 @@ void pressure_balance_init(void)
     s_state = STATE_INIT;
     s_state_start_time = xTaskGetTickCount();
     s_initialized = true;
-    s_enabled = true;
+    s_enabled = PRESSURE_BALANCE_ENABLED_DEFAULT;
 }
 
 void pressure_balance_update(void)

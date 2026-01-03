@@ -200,28 +200,23 @@ void app_main(void)
     
 #if RUN_MODE == MODE_REACTION
     // ───────────────────────────────────────────────────────
-    // Mode 2: Combined Reaction Mode
+    // Mode 2: IMU-Based Reaction Mode
     // ───────────────────────────────────────────────────────
     ESP_LOGI(TAG, "");
     ESP_LOGI(TAG, "╔═══════════════════════════════════════╗");
-    ESP_LOGI(TAG, "║   Mode 2: Combined Reaction Mode      ║");
+    ESP_LOGI(TAG, "║   Mode 2: IMU Reaction Mode           ║");
     ESP_LOGI(TAG, "║                                       ║");
-    ESP_LOGI(TAG, "║   Back pressure (BL/BR > 0.3°)        ║");
-    ESP_LOGI(TAG, "║     → Crouch down                     ║");
-    ESP_LOGI(TAG, "║                                       ║");
-    ESP_LOGI(TAG, "║   Front pressure (FL/FR > 0.2°)       ║");
-    ESP_LOGI(TAG, "║     → Walk 1 cycle                    ║");
-    ESP_LOGI(TAG, "║                                       ║");
-    ESP_LOGI(TAG, "║   IMU push → Walk 3 cycles            ║");
+    ESP_LOGI(TAG, "║   IMU push detection only             ║");
+    ESP_LOGI(TAG, "║   (Pressure detection disabled)       ║");
     ESP_LOGI(TAG, "╚═══════════════════════════════════════╝");
     ESP_LOGI(TAG, "");
     
     // Initialize reaction system
     reaction_init();
     
-    // Create pressure detection task (100Hz polling)
-    xTaskCreate(reaction_pressure_task, "pressure", 4096, NULL, 5, NULL);
-    ESP_LOGI(TAG, "Pressure task created (100Hz)");
+    // Pressure detection task disabled - using IMU only
+    // xTaskCreate(reaction_pressure_task, "pressure", 4096, NULL, 5, NULL);
+    // ESP_LOGI(TAG, "Pressure task created (100Hz)");
     
     // Keep main task alive
     while (1) {
