@@ -819,8 +819,8 @@ public:
 
         const Keyframe keyframes[] = {
             {.fr = 70.0f,  .fl = 70.0f,  .br = 325.0f, .bl = 325.0f, .speed = 1000, .delay_ms = (uint16_t)sit_time_ms},
-            {.fr = 170.0f, .fl = 170.0f, .br = 310.0f, .bl = 310.0f, .speed = 1200, .delay_ms = 400},
-            {.fr = 90.0f,  .fl = 90.0f,  .br = 270.0f, .bl = 270.0f, .speed = 800,  .delay_ms = 300},
+            {.fr = 170.0f, .fl = 170.0f, .br = 325.0f, .bl = 325.0f, .speed = 1200, .delay_ms = 400},
+            {.fr = 90.0f,  .fl = 90.0f,  .br = 270.0f, .bl = 270.0f, .speed = 1000,  .delay_ms = 300},
         };
 
         const int kf_count = sizeof(keyframes) / sizeof(keyframes[0]);
