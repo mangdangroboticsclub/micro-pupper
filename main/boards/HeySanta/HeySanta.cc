@@ -697,8 +697,8 @@ public:
         
         const Keyframe keyframes[] = {
             {.fr = 90.0f, .fl = 90.0f, .br = 270.0f, .bl = 270.0f, .speed = 2400, .delay_ms = 207},
-            {.fr = 80.0f, .fl = 80.0f, .br = 290.0f, .bl = 290.0f, .speed = 2400, .delay_ms = 313},
-            {.fr = 140.0f, .fl = 140.0f, .br = 230.0f, .bl = 230.0f, .speed = 2400, .delay_ms = 200},
+            {.fr = 80.0f, .fl = 80.0f, .br = 289.0f, .bl = 289.0f, .speed = 2400, .delay_ms = 313},
+            {.fr = 130.0f, .fl = 130.0f, .br = 230.0f, .bl = 230.0f, .speed = 2400, .delay_ms = 200},
             {.fr = 90.0f, .fl = 90.0f, .br = 270.0f, .bl = 270.0f, .speed = 2400, .delay_ms = 260},
         };
         
