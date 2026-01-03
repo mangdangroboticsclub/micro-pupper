@@ -814,7 +814,7 @@ public:
     }
     
     void SitAndStand(uint32_t sit_time_ms) {
-        ESP_LOGI(TAG, "Dog: >>> SIT & STAND <<< (sit_time_ms=%u)", sit_time_ms);
+        ESP_LOGI(TAG, "Dog: >>> SIT & STAND <<< (sit_time_ms=%u)", (unsigned int)sit_time_ms);
         SetConversationActive(true);  // **BLOCK IMU**
 
         const Keyframe keyframes[] = {
