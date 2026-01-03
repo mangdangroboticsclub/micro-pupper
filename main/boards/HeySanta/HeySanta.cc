@@ -599,7 +599,7 @@ public:
     // ═══════════════════════════════════════════════════════
     // MOVEMENT SEQUENCES
     // ═══════════════════════════════════════════════════════
-    void WalkForward(int loops = 6) {
+    void WalkForward(int loops = 3) {
         ESP_LOGI(TAG, "Dog: >>> WALKING FORWARD <<<");
         SetConversationActive(true);  // **BLOCK IMU**
         // Walk cycle implemented as keyframes (FR, FL, BR, BL)
@@ -882,10 +882,11 @@ private:
     void InitializeTools() {
         auto& mcp_server = McpServer::GetInstance();
         
-        mcp_server.AddTool("dog.walk", "Make the robot dog walk forward", PropertyList(), 
+        mcp_server.AddTool("dog.walk", "Make the robot dog walk forward", PropertyList({Property("loops", kPropertyTypeInteger, 2, 1, 100)}), 
             [this](const PropertyList& properties) -> ReturnValue {
                 ESP_LOGI(TAG, "Dog walk command received");
-                servo_controller_.WalkForward(6);
+                int loops = properties["loops"].value<int>();
+                servo_controller_.WalkForward(loops);
                 return "Dog walked forward";
             });
         
@@ -924,17 +925,23 @@ private:
                 return "Dog pounced";
             });
 
-        mcp_server.AddTool("dog.turn_left_fast", "Make the robot dog turn left quickly", PropertyList(), 
+        mcp_server.AddTool("dog.turn_left_fast", "Make the robot dog turn left quickly", PropertyList({Property("loops", kPropertyTypeInteger, 1, 1, 100)}), 
             [this](const PropertyList& properties) -> ReturnValue {
                 ESP_LOGI(TAG, "Dog turn left fast command received");
-                servo_controller_.TurnLeftFast();
+                int loops = properties["loops"].value<int>();
+                for (int i = 0; i < loops; ++i) {
+                    servo_controller_.TurnLeftFast();
+                }
                 return "Dog turned left";
             });
 
-        mcp_server.AddTool("dog.turn_right_fast", "Make the robot dog turn right quickly", PropertyList(), 
+        mcp_server.AddTool("dog.turn_right_fast", "Make the robot dog turn right quickly", PropertyList({Property("loops", kPropertyTypeInteger, 1, 1, 100)}), 
             [this](const PropertyList& properties) -> ReturnValue {
                 ESP_LOGI(TAG, "Dog turn right fast command received");
-                servo_controller_.TurnRightFast();
+                int loops = properties["loops"].value<int>();
+                for (int i = 0; i < loops; ++i) {
+                    servo_controller_.TurnRightFast();
+                }
                 return "Dog turned right";
             });
 
