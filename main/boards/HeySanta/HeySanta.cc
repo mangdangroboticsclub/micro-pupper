@@ -1000,6 +1000,40 @@ public:
         SetConversationActive(false);
     }
 
+    void PounceBack(int loops = 1) {
+        if (is_flipped_) {
+            ESP_LOGW(TAG, "Cannot perform PounceBack - dog is flipped. Use BackFlipReverse first.");
+            return;
+        }
+        
+        ESP_LOGI(TAG, "Dog: >>> POUNCE BACK (%d loops) <<<", loops);
+        SetConversationActive(true);
+        
+        const Keyframe keyframes[] = {
+            {.fr = 90.0f, .fl = 90.0f, .br = 270.0f, .bl = 270.0f, .speed = 20000, .delay_ms = 207},
+            {.fr = 68.0f, .fl = 68.0f, .br = 280.0f, .bl = 280.0f, .speed = 2000, .delay_ms = 313},
+            {.fr = 90.0f, .fl = 90.0f, .br = 180.0f, .bl = 180.0f, .speed = 3300, .delay_ms = 150},
+            {.fr = 90.0f, .fl = 90.0f, .br = 270.0f, .bl = 270.0f, .speed = 2000, .delay_ms = 300},
+            {.fr = 90.0f, .fl = 90.0f, .br = 270.0f, .bl = 270.0f, .speed = 20000, .delay_ms = 207},
+            {.fr = 68.0f, .fl = 68.0f, .br = 280.0f, .bl = 280.0f, .speed = 2000, .delay_ms = 313},
+            {.fr = 90.0f, .fl = 90.0f, .br = 180.0f, .bl = 180.0f, .speed = 3300, .delay_ms = 150},
+            {.fr = 90.0f, .fl = 90.0f, .br = 270.0f, .bl = 270.0f, .speed = 2000, .delay_ms = 300},
+        };
+        
+        const int kf_count = sizeof(keyframes) / sizeof(keyframes[0]);
+
+        for (int loop = 0; loop < loops; loop++) {
+            for (int i = 0; i < kf_count; i++) {
+                const Keyframe &kf = keyframes[i];
+                ServoMoveAll(kf.fr, kf.fl, kf.br, kf.bl, kf.speed);
+                vTaskDelay(pdMS_TO_TICKS(kf.delay_ms));
+            }
+        }
+        
+        MoveReset();
+        SetConversationActive(false);
+    }
+
     void BackFlip() {
         if (is_flipped_) {
             ESP_LOGW(TAG, "Cannot perform BackFlip - dog is already flipped. Use BackFlipReverse first.");
@@ -1278,6 +1312,14 @@ private:
                 ESP_LOGI(TAG, "Dog pounce command received");
                 servo_controller_.Pounce();
                 return "Dog pounced";
+            });
+
+        mcp_server.AddTool("dog.pounce_back", "Make the robot dog pounce back", PropertyList({Property("loops", kPropertyTypeInteger, 1, 1, 100)}), 
+            [this](const PropertyList& properties) -> ReturnValue {
+                ESP_LOGI(TAG, "Dog pounce back command received");
+                int loops = properties["loops"].value<int>();
+                servo_controller_.PounceBack(loops);
+                return "Dog pounced back";
             });
 
         mcp_server.AddTool("dog.turn_left_fast", "Make the robot dog turn left quickly", PropertyList({Property("loops", kPropertyTypeInteger, 1, 1, 100)}), 
