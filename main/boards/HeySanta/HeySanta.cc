@@ -40,107 +40,118 @@ LV_FONT_DECLARE(font_awesome_20_4);
 // ═══════════════════════════════════════════════════════
 // SERVO CONFIGURATION (using sts3032 driver)
 // ═══════════════════════════════════════════════════════
-#define SERVO_UART_NUM      UART_NUM_1
-#define SERVO_TX_PIN        GPIO_NUM_10
-#define SERVO_RX_PIN        GPIO_NUM_11
-#define SERVO_TXEN_PIN      GPIO_NUM_3
-#define SERVO_BAUD_RATE     1000000
+#define SERVO_UART_NUM UART_NUM_1
+#define SERVO_TX_PIN GPIO_NUM_10
+#define SERVO_RX_PIN GPIO_NUM_11
+#define SERVO_TXEN_PIN GPIO_NUM_3
+#define SERVO_BAUD_RATE 1000000
 
 // Servo IDs (same convention as dog_config)
-#define SERVO_FR            1   // Front Right
-#define SERVO_FL            2   // Front Left
-#define SERVO_BR            3   // Back Right
-#define SERVO_BL            4   // Back Left
-#define SERVO_COUNT         4
+#define SERVO_FR 1 // Front Right
+#define SERVO_FL 2 // Front Left
+#define SERVO_BR 3 // Back Right
+#define SERVO_BL 4 // Back Left
+#define SERVO_COUNT 4
 
 // Stance angles (from left-side perspective)
-#define STANCE_FRONT        90.0f   // Front legs neutral
-#define STANCE_BACK         270.0f  // Back legs neutral
-#define SWING_AMPLITUDE     25.0f   // Max deviation from stance
+#define STANCE_FRONT 90.0f // Front legs neutral
+#define STANCE_BACK 270.0f // Back legs neutral
+#define SWING_AMPLITUDE 25.0f // Max deviation from stance
 
 // Speed presets
-#define SPEED_SLOW          300
-#define SPEED_MEDIUM        700
-#define SPEED_FAST          1500
-#define SPEED_VERY_FAST     3000
-#define SPEED_MAX           4095
+#define SPEED_SLOW 300
+#define SPEED_MEDIUM 700
+#define SPEED_FAST 1500
+#define SPEED_VERY_FAST 3000
+#define SPEED_MAX 4095
 
 // Dynamic speed for stance (prevents shaking)
-#define STANCE_SPEED_MIN        20
-#define STANCE_SPEED_MAX        1500
-#define STANCE_SPEED_THRESHOLD  40.0f
-#define STANCE_SPEED_CURVE      1.4f
+#define STANCE_SPEED_MIN 20
+#define STANCE_SPEED_MAX 1500
+#define STANCE_SPEED_THRESHOLD 40.0f
+#define STANCE_SPEED_CURVE 1.4f
 
 // Angle reversal macros for right-side servos
-#define REVERSE_ANGLE(angle)    (360.0f - (angle))
-#define IS_RIGHT_SIDE(id)       ((id) == SERVO_FR || (id) == SERVO_BR)
-#define IS_FRONT_LEG(id)        ((id) == SERVO_FR || (id) == SERVO_FL)
+#define REVERSE_ANGLE(angle) (360.0f - (angle))
+#define IS_RIGHT_SIDE(id) ((id) == SERVO_FR || (id) == SERVO_BR)
+#define IS_FRONT_LEG(id) ((id) == SERVO_FR || (id) == SERVO_FL)
 
 // ═══════════════════════════════════════════════════════
 // QMI8658A IMU CONFIG
 // ═══════════════════════════════════════════════════════
-#define IMU_SDA_PIN         GPIO_NUM_1
-#define IMU_SCL_PIN         GPIO_NUM_2
-#define IMU_I2C_FREQ_HZ     400000
+#define IMU_SDA_PIN GPIO_NUM_1
+#define IMU_SCL_PIN GPIO_NUM_2
+#define IMU_I2C_FREQ_HZ 400000
 
-#define IMU_I2C_ADDR_PRIMARY   0x6A
+#define IMU_I2C_ADDR_PRIMARY 0x6A
 #define IMU_I2C_ADDR_SECONDARY 0x6B
 
-#define IMU_CHIP_ID         0x05
+#define IMU_CHIP_ID 0x05
 
 // QMI8658A Registers
-#define QMI_REG_CHIP_ID     0x00
-#define QMI_REG_REVISION    0x01
-#define QMI_REG_CTRL1       0x02
-#define QMI_REG_CTRL2       0x03
-#define QMI_REG_CTRL3       0x04
-#define QMI_REG_CTRL4       0x05
-#define QMI_REG_CTRL5       0x06
-#define QMI_REG_CTRL6       0x07
-#define QMI_REG_CTRL7       0x08
-#define QMI_REG_CTRL8       0x09
-#define QMI_REG_CTRL9       0x0A
-#define QMI_REG_STATUS0     0x2E
-#define QMI_REG_AX_L        0x35
+#define QMI_REG_CHIP_ID 0x00
+#define QMI_REG_REVISION 0x01
+#define QMI_REG_CTRL1 0x02
+#define QMI_REG_CTRL2 0x03
+#define QMI_REG_CTRL3 0x04
+#define QMI_REG_CTRL4 0x05
+#define QMI_REG_CTRL5 0x06
+#define QMI_REG_CTRL6 0x07
+#define QMI_REG_CTRL7 0x08
+#define QMI_REG_CTRL8 0x09
+#define QMI_REG_CTRL9 0x0A
+#define QMI_REG_STATUS0 0x2E
+#define QMI_REG_AX_L 0x35
 
 // ═══════════════════════════════════════════════════════
-// GYRO BALANCE CONFIG (Mahony Filter Based)
+// GYRO BALANCE CONFIG (Mahony Filter Based - IMPROVED)
 // ═══════════════════════════════════════════════════════
-#define GYRO_BALANCE_ENABLED_DEFAULT    false
-#define GYRO_BALANCE_MAX_CORRECTION     65.0f
-#define GYRO_BALANCE_DEADZONE           0.5f
-#define GYRO_BALANCE_GAIN               1.6f
-#define GYRO_BALANCE_UPDATE_INTERVAL_MS 50
-#define IMU_UPDATE_INTERVAL_MS          50
+#define GYRO_BALANCE_ENABLED_DEFAULT false
+#define GYRO_BALANCE_MAX_CORRECTION 65.0f
+#define GYRO_BALANCE_DEADZONE 0.7f
+#define GYRO_BALANCE_GAIN 2.5f
+#define GYRO_BALANCE_UPDATE_INTERVAL_MS 10
+#define IMU_UPDATE_INTERVAL_MS 10
 
-// Mahony filter parameters
-#define MAHONY_KP                       2.0f
-#define MAHONY_KI                       0.005f
-#define ACCEL_MAGNITUDE_MIN             0.8f
-#define ACCEL_MAGNITUDE_MAX             1.2f
+// Mahony filter parameters (optimized from gyro_balance.c)
+#define MAHONY_KP 1.5f      // Reduced - less accelerometer noise
+#define MAHONY_KI 0.003f    // Reduced - slower bias correction
+#define ACCEL_MAGNITUDE_MIN 0.9f  // Tighter window = less noise
+#define ACCEL_MAGNITUDE_MAX 1.1f
 
-// Output smoothing
-#define CORRECTION_SMOOTHING            0.5f
-#define CORRECTION_RATE_LIMIT           5.0f
+// Anti-jitter configuration (from gyro_balance.c)
+#define CHASE_SPEED 0.4f           // Slower = smoother
+#define CHASE_DEADBAND 0.7f        // Larger = less micro-movements
+#define PITCH_SMOOTHING 0.4f       // Low-pass on angle itself (0.0=raw, 1.0=frozen)
+#define SERVO_UPDATE_THRESHOLD 0.4f // degrees - ignore tiny changes
+#define HYSTERESIS_THRESHOLD 0.2f  // degrees - keep moving once started
 
 // Dynamic speed for balance
-#define GYRO_BALANCE_SPEED_MIN          150
-#define GYRO_BALANCE_SPEED_MAX          2000
-#define GYRO_BALANCE_SPEED_THRESHOLD    10.0f
-#define GYRO_BALANCE_SPEED_CURVE        1.2f
+#define GYRO_BALANCE_SPEED_MIN 150
+#define GYRO_BALANCE_SPEED_MAX 2000
+#define GYRO_BALANCE_SPEED_THRESHOLD 10.0f
+#define GYRO_BALANCE_SPEED_CURVE 1.2f
 
-// Toggle gesture configuration - ADD THESE BACK
-#define GYRO_BALANCE_TOGGLE_THRESHOLD   150.0f
-#define GYRO_BALANCE_TOGGLE_WINDOW_MS   1000
+// Toggle gesture configuration
+#define GYRO_BALANCE_TOGGLE_THRESHOLD 150.0f
+#define GYRO_BALANCE_TOGGLE_WINDOW_MS 1000
 #define GYRO_BALANCE_TOGGLE_COOLDOWN_MS 1500
+
 // ═══════════════════════════════════════════════════════
-// IMU PUSH DETECTION CONFIG (from reaction_config.h)
+// IMU PUSH DETECTION CONFIG
 // ═══════════════════════════════════════════════════════
-#define PUSH_REACTION_ENABLED_DEFAULT   false   // Disabled by default
-#define REACTION_DELTA_THRESHOLD        3.0f    // m/s² change to detect push
-#define REACTION_MIN_ACCEL              1.0f    // m/s² minimum absolute acceleration
-#define REACTION_COOLDOWN_MS            1600    // Cooldown between reactions
-#define REACTION_WALK_CYCLES            3       // Number of walk cycles on push
+#define PUSH_REACTION_ENABLED_DEFAULT false
+#define REACTION_DELTA_THRESHOLD 3.0f
+#define REACTION_MIN_ACCEL 1.0f
+#define REACTION_COOLDOWN_MS 1600
+#define REACTION_WALK_CYCLES 1
+
+// ═══════════════════════════════════════════════════════
+// MOVEMENT TRANSITION CONFIG (NEW - fixes jitter)
+// ═══════════════════════════════════════════════════════
+#define PRE_MOVEMENT_SETTLE_MS 50    // Delay before starting movement
+#define POST_MOVEMENT_SETTLE_MS 300  // Time to let servos settle after movement
+#define MOVEMENT_END_WAIT_MS 500     // Wait for servos to reach final position
 
 struct ImuData {
     float accel_x, accel_y, accel_z;
@@ -159,20 +170,36 @@ struct Keyframe {
 };
 
 // ═══════════════════════════════════════════════════════
-// GLOBAL CONVERSATION LOCK
+// GLOBAL CONVERSATION LOCK (IMPROVED - fixes jitter)
 // ═══════════════════════════════════════════════════════
 static volatile bool g_conversation_active = false;
+static volatile uint32_t g_conversation_end_time = 0;
 
 void SetConversationActive(bool active) {
-    g_conversation_active = active;
     if (active) {
+        g_conversation_active = true;
         ESP_LOGI(TAG, "🔒 CONVERSATION ACTIVE - IMU processing paused");
     } else {
-        ESP_LOGI(TAG, "🔓 CONVERSATION ENDED - IMU processing resumed");
+        // Record when conversation ended for settle time
+        g_conversation_end_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
+        g_conversation_active = false;
+        ESP_LOGI(TAG, "🔓 CONVERSATION ENDED - IMU will resume after settle time");
     }
 }
 
 bool IsConversationActive() {
+    if (g_conversation_active) {
+        return true;
+    }
+    // Also return true during settle period after movement
+    uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
+    if ((now - g_conversation_end_time) < POST_MOVEMENT_SETTLE_MS) {
+        return true;
+    }
+    return false;
+}
+
+bool IsConversationActiveRaw() {
     return g_conversation_active;
 }
 
@@ -184,27 +211,27 @@ private:
     bool initialized_ = false;
     uint8_t detected_address_ = 0;
     i2c_master_dev_handle_t imu_device_ = nullptr;
-    
+
     esp_err_t WriteReg(uint8_t reg, uint8_t value) {
         if (!imu_device_) return ESP_ERR_INVALID_STATE;
         uint8_t buf[2] = {reg, value};
         return i2c_master_transmit(imu_device_, buf, 2, 1000);
     }
-    
+
     esp_err_t ReadReg(uint8_t reg, uint8_t* value) {
         if (!imu_device_) return ESP_ERR_INVALID_STATE;
         return i2c_master_transmit_receive(imu_device_, &reg, 1, value, 1, 1000);
     }
-    
+
     esp_err_t ReadRegs(uint8_t reg, uint8_t* buf, size_t len) {
         if (!imu_device_) return ESP_ERR_INVALID_STATE;
         return i2c_master_transmit_receive(imu_device_, &reg, 1, buf, len, 1000);
     }
-    
+
     float AccelToMs2(int16_t raw) {
         return (raw / 4096.0f) * 9.81f;
     }
-    
+
     float GyroToDps(int16_t raw) {
         return raw / 64.0f;
     }
@@ -275,7 +302,7 @@ public:
         initialized_ = true;
         return true;
     }
-    
+
     bool Read(ImuData* data) {
         if (!initialized_) return false;
         
@@ -302,13 +329,13 @@ public:
                                        data->accel_z * data->accel_z);
         return true;
     }
-    
+
     bool IsInitialized() const { return initialized_; }
     uint8_t GetAddress() const { return detected_address_; }
 };
 
 // ═══════════════════════════════════════════════════════
-// GYRO BALANCE CONTROLLER (Mahony Filter Implementation)
+// GYRO BALANCE CONTROLLER (Improved from gyro_balance.c)
 // ═══════════════════════════════════════════════════════
 class GyroBalanceController {
 private:
@@ -316,36 +343,46 @@ private:
     bool initialized_ = false;
     uint32_t last_balance_time_ = 0;
     uint32_t last_update_time_ = 0;
-    
+
     // Mahony filter state - quaternion representation
     float q0_ = 1.0f, q1_ = 0.0f, q2_ = 0.0f, q3_ = 0.0f;
-    
+
     // Integral error for Mahony filter (gyro bias estimation)
     float integralFBx_ = 0.0f, integralFBy_ = 0.0f, integralFBz_ = 0.0f;
-    
+
     // Estimated Euler angles (in degrees)
     float pitch_angle_raw_ = 0.0f;  // Direct from quaternion
-    float pitch_angle_ = 0.0f;       // Smoothed version we actually use
+    float pitch_angle_ = 0.0f;      // Smoothed version we actually use
     float roll_angle_ = 0.0f;
-    
-    // Smooth chase state
+
+    // Smooth chase state (from gyro_balance.c)
     float target_correction_ = 0.0f;
     float current_correction_ = 0.0f;
     float last_sent_correction_ = 0.0f;  // What we last sent to servos
-    bool is_moving_ = false;              // Hysteresis state
-    
+    bool is_moving_ = false;  // Hysteresis state
+
     // Toggle gesture state
     enum ToggleState { TOGGLE_IDLE, TOGGLE_FIRST_ROTATION, TOGGLE_WAITING_REVERSE };
     ToggleState toggle_state_ = TOGGLE_IDLE;
     int8_t first_rotation_dir_ = 0;
     uint32_t toggle_gesture_start_ = 0;
     uint32_t last_toggle_time_ = 0;
-    
-    // Fast inverse square root (Quake III algorithm)
+
+    // Fast inverse square root
     static float InvSqrt(float x) {
-        return 1.0f / sqrtf(x);
+        union {
+            float f;
+            uint32_t i;
+        } conv;
+        
+        float halfx = 0.5f * x;
+        conv.f = x;
+        conv.i = 0x5f3759df - (conv.i >> 1);
+        conv.f = conv.f * (1.5f - (halfx * conv.f * conv.f));
+        conv.f = conv.f * (1.5f - (halfx * conv.f * conv.f));
+        return conv.f;
     }
-    
+
     // Mahony AHRS filter update
     void MahonyUpdate(float gx, float gy, float gz,
                       float ax, float ay, float az,
@@ -388,12 +425,9 @@ private:
                 
                 // Anti-windup clamp
                 const float MAX_INTEGRAL = 0.5f;
-                if (integralFBx_ > MAX_INTEGRAL) integralFBx_ = MAX_INTEGRAL;
-                if (integralFBx_ < -MAX_INTEGRAL) integralFBx_ = -MAX_INTEGRAL;
-                if (integralFBy_ > MAX_INTEGRAL) integralFBy_ = MAX_INTEGRAL;
-                if (integralFBy_ < -MAX_INTEGRAL) integralFBy_ = -MAX_INTEGRAL;
-                if (integralFBz_ > MAX_INTEGRAL) integralFBz_ = MAX_INTEGRAL;
-                if (integralFBz_ < -MAX_INTEGRAL) integralFBz_ = -MAX_INTEGRAL;
+                integralFBx_ = fmaxf(-MAX_INTEGRAL, fminf(MAX_INTEGRAL, integralFBx_));
+                integralFBy_ = fmaxf(-MAX_INTEGRAL, fminf(MAX_INTEGRAL, integralFBy_));
+                integralFBz_ = fmaxf(-MAX_INTEGRAL, fminf(MAX_INTEGRAL, integralFBz_));
                 
                 gx += integralFBx_;
                 gy += integralFBy_;
@@ -425,7 +459,7 @@ private:
         q2_ *= recipNorm;
         q3_ *= recipNorm;
     }
-    
+
     // Convert quaternion to Euler angles
     void QuaternionToEuler() {
         // Roll (x-axis rotation)
@@ -433,39 +467,40 @@ private:
         float cosr_cosp = 1.0f - 2.0f * (q1_*q1_ + q2_*q2_);
         roll_angle_ = atan2f(sinr_cosp, cosr_cosp) * 57.2958f;
         
-        // Pitch (y-axis rotation)
+        // Pitch (y-axis rotation) - RAW value
         float sinp = 2.0f * (q0_*q2_ - q3_*q1_);
         if (fabsf(sinp) >= 1.0f) {
-            pitch_angle_ = copysignf(90.0f, sinp);
+            pitch_angle_raw_ = copysignf(90.0f, sinp);
         } else {
-            pitch_angle_ = asinf(sinp) * 57.2958f;
+            pitch_angle_raw_ = asinf(sinp) * 57.2958f;
         }
-    }
-    
-    uint16_t CalculateServoSpeed() {
-        // Use a fixed moderate speed for smoother movement
-        // Dynamic speed can cause jitter when oscillating
-        return (GYRO_BALANCE_SPEED_MIN + GYRO_BALANCE_SPEED_MAX) / 2;
+        
+        // ═══════════════════════════════════════════════════
+        // LOW-PASS FILTER on pitch angle itself (from gyro_balance.c)
+        // ═══════════════════════════════════════════════════
+        pitch_angle_ = pitch_angle_ * PITCH_SMOOTHING + pitch_angle_raw_ * (1.0f - PITCH_SMOOTHING);
     }
 
 public:
     void Initialize() {
         ESP_LOGI(TAG, "Gyro balance system initialized (Mahony filter)");
         ESP_LOGI(TAG, "  Default: %s, Max correction: %.1f°, Gain: %.2f",
-                GYRO_BALANCE_ENABLED_DEFAULT ? "ENABLED" : "DISABLED",
-                GYRO_BALANCE_MAX_CORRECTION, GYRO_BALANCE_GAIN);
+                 GYRO_BALANCE_ENABLED_DEFAULT ? "ENABLED" : "DISABLED",
+                 GYRO_BALANCE_MAX_CORRECTION, GYRO_BALANCE_GAIN);
         ESP_LOGI(TAG, "  Mahony Kp: %.2f, Ki: %.4f", MAHONY_KP, MAHONY_KI);
-        ESP_LOGI(TAG, "  Smoothing: %.2f, Rate limit: %.1f deg/cycle", 
-                CORRECTION_SMOOTHING, CORRECTION_RATE_LIMIT);
+        ESP_LOGI(TAG, "  Chase: %.2f, Deadband: %.1f°, Pitch smooth: %.2f",
+                 CHASE_SPEED, CHASE_DEADBAND, PITCH_SMOOTHING);
+        ESP_LOGI(TAG, "  Servo threshold: %.1f°, Hysteresis: %.2f°",
+                 SERVO_UPDATE_THRESHOLD, HYSTERESIS_THRESHOLD);
         
         Reset();
         initialized_ = true;
     }
-    
+
     // Detect toggle gesture (rotate on X axis back and forth)
     bool ProcessToggle(float gyro_x) {
         uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
-        
+            return false;
         // Check cooldown
         if ((now - last_toggle_time_) < GYRO_BALANCE_TOGGLE_COOLDOWN_MS) {
             return false;
@@ -503,7 +538,6 @@ public:
                 }
                 if (above_threshold) {
                     if (current_dir != first_rotation_dir_) {
-                        // Toggle detected!
                         last_toggle_time_ = now;
                         toggle_state_ = TOGGLE_IDLE;
                         ESP_LOGI(TAG, "Toggle gesture complete!");
@@ -516,19 +550,24 @@ public:
         
         return false;
     }
-    
+
     struct BalanceResult {
         float front_offset;
         float back_offset;
         uint16_t speed;
         bool should_update;
     };
-    
-    // Process IMU data and calculate balance corrections
+
+    // Process IMU data and calculate balance corrections (IMPROVED from gyro_balance.c)
     BalanceResult Process(const ImuData& data, float dt) {
         BalanceResult result = {0.0f, 0.0f, GYRO_BALANCE_SPEED_MIN, false};
         
         uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
+        
+        // Clamp dt to reasonable range
+        if (dt <= 0.0f || dt > 0.1f) {
+            dt = 0.02f;
+        }
         
         // Always update the Mahony filter for accurate angle tracking
         MahonyUpdate(data.gyro_x, data.gyro_y, data.gyro_z,
@@ -546,74 +585,85 @@ public:
         }
         last_balance_time_ = now;
         
-        // Apply deadzone to pitch angle
+        // ═══════════════════════════════════════════════════
+        // STEP 1: Calculate target correction
+        // ═══════════════════════════════════════════════════
         float effective_pitch = pitch_angle_;
         if (fabsf(effective_pitch) < GYRO_BALANCE_DEADZONE) {
             effective_pitch = 0.0f;
         }
         
-        // Calculate raw correction
-        float raw_correction = effective_pitch * GYRO_BALANCE_GAIN;
+        target_correction_ = effective_pitch * GYRO_BALANCE_GAIN;
         
-        // Clamp raw correction
-        if (raw_correction > GYRO_BALANCE_MAX_CORRECTION) {
-            raw_correction = GYRO_BALANCE_MAX_CORRECTION;
-        } else if (raw_correction < -GYRO_BALANCE_MAX_CORRECTION) {
-            raw_correction = -GYRO_BALANCE_MAX_CORRECTION;
+        if (target_correction_ > GYRO_BALANCE_MAX_CORRECTION) {
+            target_correction_ = GYRO_BALANCE_MAX_CORRECTION;
+        } else if (target_correction_ < -GYRO_BALANCE_MAX_CORRECTION) {
+            target_correction_ = -GYRO_BALANCE_MAX_CORRECTION;
         }
         
-        // Low-pass filter on correction output (matches C version)
-        current_correction_ = current_correction_ * (1.0f - CORRECTION_SMOOTHING) 
-                            + raw_correction * CORRECTION_SMOOTHING;
+        // ═══════════════════════════════════════════════════
+        // STEP 2: Chase with hysteresis
+        // ═══════════════════════════════════════════════════
+        float diff = target_correction_ - current_correction_;
+        float abs_diff = fabsf(diff);
         
-        // Rate limiting: prevent sudden jumps
-        float delta = current_correction_ - last_sent_correction_;
-        if (delta > CORRECTION_RATE_LIMIT) {
-            current_correction_ = last_sent_correction_ + CORRECTION_RATE_LIMIT;
-        } else if (delta < -CORRECTION_RATE_LIMIT) {
-            current_correction_ = last_sent_correction_ - CORRECTION_RATE_LIMIT;
+        // Hysteresis: use different thresholds for starting vs stopping movement
+        float threshold = is_moving_ ? HYSTERESIS_THRESHOLD : CHASE_DEADBAND;
+        
+        if (abs_diff > threshold) {
+            current_correction_ += diff * CHASE_SPEED;
+            is_moving_ = true;
+        } else {
+            is_moving_ = false;
         }
         
-        // Always update (removed threshold check for more reactive response)
+        // ═══════════════════════════════════════════════════
+        // STEP 3: Only send to servos if change is significant
+        // ═══════════════════════════════════════════════════
+        float servo_diff = fabsf(current_correction_ - last_sent_correction_);
+        
+        if (servo_diff < SERVO_UPDATE_THRESHOLD) {
+            // Skip this update - change too small
+            return result;
+        }
+        
         last_sent_correction_ = current_correction_;
         
-        // Calculate servo offsets
+        // ═══════════════════════════════════════════════════
+        // STEP 4: Calculate final output
+        // ═══════════════════════════════════════════════════
         result.front_offset = current_correction_;
         result.back_offset = current_correction_;
         
-        // Dynamic speed based on angle change
-        float angle_delta = fabsf(delta);
-        float speed_ratio = angle_delta / GYRO_BALANCE_SPEED_THRESHOLD;
-        if (speed_ratio > 1.0f) speed_ratio = 1.0f;
-        speed_ratio = powf(speed_ratio, GYRO_BALANCE_SPEED_CURVE);
+        // Use a fixed moderate speed for smoother movement
+        // Dynamic speed can cause jitter when oscillating
+        result.speed = (GYRO_BALANCE_SPEED_MIN + GYRO_BALANCE_SPEED_MAX) / 2;
         
-        result.speed = (uint16_t)(GYRO_BALANCE_SPEED_MIN + 
-                    speed_ratio * (GYRO_BALANCE_SPEED_MAX - GYRO_BALANCE_SPEED_MIN));
         result.should_update = true;
         
-        // Debug logging
+        // Debug logging (less frequent)
         static int log_counter = 0;
-        if (++log_counter >= 20) {
-            ESP_LOGD(TAG, "Pitch: %+6.1f° Correction: %+6.1f° (raw: %+6.1f°)", 
-                    pitch_angle_, current_correction_, raw_correction);
+        if (++log_counter >= 25) {
+            ESP_LOGD(TAG, "Pitch: %+5.1f° (raw:%+5.1f°) Target: %+5.1f° Current: %+5.1f°", 
+                     pitch_angle_, pitch_angle_raw_, target_correction_, current_correction_);
             log_counter = 0;
         }
         
         return result;
     }
-    
+
     void Enable(bool enable) { 
         if (enable && !enabled_) {
             Reset();
-            ESP_LOGI(TAG, "⚖️ Gyro balance ENABLED (Mahony filter)");
+            ESP_LOGI(TAG, "⚖️ Gyro balance ENABLED");
         } else if (!enable && enabled_) {
             ESP_LOGI(TAG, "⚖️ Gyro balance DISABLED - returning to stance");
         }
         enabled_ = enable;
     }
-    
+
     bool IsEnabled() const { return enabled_; }
-    
+
     void Reset() { 
         // Reset quaternion to identity
         q0_ = 1.0f; q1_ = 0.0f; q2_ = 0.0f; q3_ = 0.0f;
@@ -626,7 +676,7 @@ public:
         pitch_angle_ = 0.0f;
         roll_angle_ = 0.0f;
         
-        // Reset chase state
+        // Reset output state
         target_correction_ = 0.0f;
         current_correction_ = 0.0f;
         last_sent_correction_ = 0.0f;
@@ -640,13 +690,24 @@ public:
         toggle_state_ = TOGGLE_IDLE;
         last_toggle_time_ = 0;
     }
-    
+
+    // NEW: Sync to stance position after movement completes
+    void SyncToStance() {
+        // Reset the chase state to current position (no correction needed)
+        target_correction_ = 0.0f;
+        current_correction_ = 0.0f;
+        last_sent_correction_ = 0.0f;
+        is_moving_ = false;
+        
+        ESP_LOGD(TAG, "Balance controller synced to stance position");
+    }
+
     float GetPitch() const { return pitch_angle_; }
     float GetRoll() const { return roll_angle_; }
 };
 
 // ═══════════════════════════════════════════════════════
-// IMU PUSH REACTION CONTROLLER (Delta-based detection)
+// IMU PUSH REACTION CONTROLLER
 // ═══════════════════════════════════════════════════════
 class PushReactionController {
 private:
@@ -654,14 +715,14 @@ private:
     bool has_prev_reading_ = false;
     float prev_accel_x_ = 0.0f;
     uint32_t last_reaction_time_ = 0;
-    
+
 public:
     enum PushDirection {
         PUSH_NONE = 0,
         PUSH_FRONT = 1,
         PUSH_BACK = -1
     };
-    
+
     void Enable(bool enable) {
         if (enabled_ != enable) {
             enabled_ = enable;
@@ -671,28 +732,23 @@ public:
             }
         }
     }
-    
+
     bool IsEnabled() const { return enabled_; }
-    
+
     void Reset() {
         has_prev_reading_ = false;
         prev_accel_x_ = 0.0f;
     }
-    
+
     bool IsCooldownExpired() const {
         uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
         return (now - last_reaction_time_) >= REACTION_COOLDOWN_MS;
     }
-    
+
     void UpdateReactionTime() {
         last_reaction_time_ = xTaskGetTickCount() * portTICK_PERIOD_MS;
     }
-    
-    /**
-     * @brief Process IMU data and detect push events
-     * @param accel_x Current X-axis acceleration in m/s²
-     * @return Push direction: PUSH_FRONT, PUSH_BACK, or PUSH_NONE
-     */
+
     PushDirection ProcessAccel(float accel_x) {
         if (!enabled_) {
             return PUSH_NONE;
@@ -731,7 +787,7 @@ public:
 };
 
 // ═══════════════════════════════════════════════════════
-// SERVO CONTROLLER - Using sts3032 driver library
+// SERVO CONTROLLER
 // ═══════════════════════════════════════════════════════
 class ServoController {
 private:
@@ -775,6 +831,15 @@ private:
     }
 
     void ServoMoveAll(float angle_fr, float angle_fl, float angle_br, float angle_bl, uint16_t speed) {
+        // ═══════════════════════════════════════════════════
+        // CALIBRATION OFFSETS (adjust these to level the robot)
+        // Positive = leg moves backward/down, Negative = leg moves forward/up
+        // ═══════════════════════════════════════════════════
+        angle_fr += 0.0f;   // Front Right offset
+        angle_fl += 0.0f;   // Front Left offset (you already have this)
+        angle_br += 0.0f;   // Back Right offset
+        angle_bl += 0.0f;   // Back Left offset
+        
         float actual_fr = ApplyReversal(SERVO_FR, angle_fr);
         float actual_br = ApplyReversal(SERVO_BR, angle_br);
         float actual_fl = angle_fl;
@@ -784,6 +849,26 @@ private:
         sts_servo_set_angle(SERVO_FL, actual_fl, speed);
         sts_servo_set_angle(SERVO_BR, actual_br, speed);
         sts_servo_set_angle(SERVO_BL, actual_bl, speed);
+    }
+    void PrintServoAngles() {
+        float angle_fr, angle_fl, angle_br, angle_bl;
+        
+        sts_servo_get_angle(SERVO_FR, &angle_fr);
+        sts_servo_get_angle(SERVO_FL, &angle_fl);
+        sts_servo_get_angle(SERVO_BR, &angle_br);
+        sts_servo_get_angle(SERVO_BL, &angle_bl);
+        
+        ESP_LOGI(TAG, "Servo angles - FR: %.1f°  FL: %.1f°  BR: %.1f°  BL: %.1f°", 
+            angle_fr, angle_fl, angle_br, angle_bl);
+    }
+    // Helper to prepare for movement - waits for any pending servo commands
+    void PrepareForMovement() {
+        vTaskDelay(pdMS_TO_TICKS(PRE_MOVEMENT_SETTLE_MS));
+    }
+
+    // Helper to finalize movement - waits for servos to reach position
+    void FinalizeMovement() {
+        vTaskDelay(pdMS_TO_TICKS(MOVEMENT_END_WAIT_MS));
     }
 
 public:
@@ -838,11 +923,13 @@ public:
         );
         
         vTaskDelay(pdMS_TO_TICKS(500));
+        PrintServoAngles();  // Add this line
     }
 
     void MoveReset() {
         ESP_LOGI(TAG, "Dog: Resetting to stance (flipped: %s)", is_flipped_ ? "yes" : "no");
-        SetConversationActive(true);
+        
+        // Note: Caller should have already set conversation active
         
         if (is_flipped_) {
             ServoMoveAll(
@@ -862,10 +949,10 @@ public:
             );
         }
         
-        vTaskDelay(pdMS_TO_TICKS(1000));
-        SetConversationActive(false);
+        // Wait for servos to actually reach position
+        FinalizeMovement();
     }
-    
+
     void GotoStanceSmooth() {
         ESP_LOGI(TAG, "Dog: Smooth return to stance");
         
@@ -889,13 +976,16 @@ public:
         
         ServoMoveAll(angle_fr, angle_fl, angle_br, angle_bl, speed);
     }
-    
+
     bool IsWalkInProgress() const { return walk_in_progress_; }
 
     void WalkForward(int loops = 3) {
         ESP_LOGI(TAG, "Dog: >>> WALKING FORWARD (%d loops) <<<", loops);
         SetConversationActive(true);
         walk_in_progress_ = true;
+        
+        // Wait for any in-flight servo commands to complete
+        PrepareForMovement();
         
         Keyframe walk_keyframes[] = {
             { .fr = 55,  .fl = 110, .br = 290, .bl = 240, .speed = 1600, .delay_ms = 250 },
@@ -918,7 +1008,7 @@ public:
         
         walk_in_progress_ = false;
         MoveReset();
-        SetConversationActive(false);
+        SetConversationActive(false);  // Settle timer starts here
     }
 
     void DoubleFrontFlip() {
@@ -929,6 +1019,7 @@ public:
         
         ESP_LOGI(TAG, "Dog: >>> DOUBLE FRONT FLIP <<<");
         SetConversationActive(true);
+        PrepareForMovement();
         
         const Keyframe keyframes[] = {
             {.fr = 80.0f, .fl = 80.0f, .br = 260.0f, .bl = 260.0f, .speed = 2000, .delay_ms = 164},
@@ -957,6 +1048,7 @@ public:
         
         ESP_LOGI(TAG, "Dog: >>> FRONT FLIP <<<");
         SetConversationActive(true);
+        PrepareForMovement();
         
         const Keyframe keyframes[] = {
             {.fr = 80.0f, .fl = 80.0f, .br = 260.0f, .bl = 260.0f, .speed = 200, .delay_ms = 164},
@@ -983,6 +1075,7 @@ public:
         
         ESP_LOGI(TAG, "Dog: >>> POUNCE <<<");
         SetConversationActive(true);
+        PrepareForMovement();
         
         const Keyframe keyframes[] = {
             {.fr = 90.0f, .fl = 90.0f, .br = 270.0f, .bl = 270.0f, .speed = 2400, .delay_ms = 207},
@@ -1008,6 +1101,7 @@ public:
         
         ESP_LOGI(TAG, "Dog: >>> POUNCE BACK (%d loops) <<<", loops);
         SetConversationActive(true);
+        PrepareForMovement();
         
         const Keyframe keyframes[] = {
             {.fr = 90.0f, .fl = 90.0f, .br = 270.0f, .bl = 270.0f, .speed = 20000, .delay_ms = 207},
@@ -1042,6 +1136,7 @@ public:
         
         ESP_LOGI(TAG, "Dog: >>> BACK FLIP <<<");
         SetConversationActive(true);
+        PrepareForMovement();
         
         const Keyframe keyframes[] = {
             {.fr = 80.0f, .fl = 80.0f, .br = 260.0f, .bl = 260.0f, .speed = 4095, .delay_ms = 164},
@@ -1068,6 +1163,7 @@ public:
         
         ESP_LOGI(TAG, "Dog: >>> BACK FLIP REVERSE <<<");
         SetConversationActive(true);
+        PrepareForMovement();
         
         const Keyframe keyframes[] = {
             {.fr = 260.0f, .fl = 260.0f, .br = 80.0f, .bl = 80.0f, .speed = 4095, .delay_ms = 164},
@@ -1094,6 +1190,7 @@ public:
         
         ESP_LOGI(TAG, "Dog: >>> TURN LEFT (FAST) <<<");
         SetConversationActive(true);
+        PrepareForMovement();
         
         const Keyframe keyframes[] = {
             {.fr = 65.0f, .fl = 65.0f, .br = 245.0f, .bl = 295.0f, .speed = 700, .delay_ms = 300},
@@ -1119,6 +1216,7 @@ public:
         
         ESP_LOGI(TAG, "Dog: >>> TURN RIGHT (FAST) <<<");
         SetConversationActive(true);
+        PrepareForMovement();
         
         const Keyframe keyframes[] = {
             {.fr = 65.0f, .fl = 65.0f, .br = 295.0f, .bl = 245.0f, .speed = 700, .delay_ms = 300},
@@ -1135,10 +1233,11 @@ public:
         MoveReset();
         SetConversationActive(false);
     }
-    
+
     void SitAndStand(uint32_t sit_time_ms) {
         ESP_LOGI(TAG, "Dog: >>> SIT & STAND <<< (sit_time_ms=%u)", (unsigned int)sit_time_ms);
         SetConversationActive(true);
+        PrepareForMovement();
 
         const Keyframe keyframes[] = {
             {.fr = 70.0f,  .fl = 70.0f,  .br = 325.0f, .bl = 325.0f, .speed = 1000, .delay_ms = (uint16_t)sit_time_ms},
@@ -1164,12 +1263,12 @@ public:
 // ═══════════════════════════════════════════════════════
 // AUDIO CODEC
 // ═══════════════════════════════════════════════════════
-class HeySantaCodec : public SantaAudioCodec  {
+class HeySantaCodec : public SantaAudioCodec {
 public:
     HeySantaCodec(i2c_master_bus_handle_t i2c_bus, int input_sample_rate, int output_sample_rate,
-    gpio_num_t mclk, gpio_num_t bclk, gpio_num_t ws, gpio_num_t dout, gpio_num_t din, uint8_t es7210_addr, bool input_reference)
+                  gpio_num_t mclk, gpio_num_t bclk, gpio_num_t ws, gpio_num_t dout, gpio_num_t din, uint8_t es7210_addr, bool input_reference)
         : SantaAudioCodec(i2c_bus, input_sample_rate, output_sample_rate,
-                             mclk,  bclk,  ws,  dout,  din, es7210_addr, input_reference) {}
+                         mclk, bclk, ws, dout, din, es7210_addr, input_reference) {}
 
     virtual void EnableOutput(bool enable) override {
         SantaAudioCodec::EnableOutput(enable);
@@ -1204,21 +1303,39 @@ private:
         ESP_LOGI(TAG, "  Push reaction: %s (delta=%.1f m/s², min=%.1f m/s², cooldown=%dms)",
                  PUSH_REACTION_ENABLED_DEFAULT ? "ENABLED" : "DISABLED",
                  REACTION_DELTA_THRESHOLD, REACTION_MIN_ACCEL, REACTION_COOLDOWN_MS);
-        ESP_LOGI(TAG, "  Gyro balance: %s (Mahony filter)",
+        ESP_LOGI(TAG, "  Gyro balance: %s (Mahony filter + anti-jitter)",
                  GYRO_BALANCE_ENABLED_DEFAULT ? "ENABLED" : "DISABLED");
+        ESP_LOGI(TAG, "  Movement transition: pre=%dms, post=%dms, end=%dms",
+                 PRE_MOVEMENT_SETTLE_MS, POST_MOVEMENT_SETTLE_MS, MOVEMENT_END_WAIT_MS);
         
         const TickType_t interval = pdMS_TO_TICKS(IMU_UPDATE_INTERVAL_MS);
         ImuData imu_data;
+        bool was_paused = false;
         
         while (imu_task_running_) {
             if (imu_controller_.Read(&imu_data)) {
                 uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
                 float dt = (now - last_imu_time_) / 1000.0f;
-                if (dt <= 0.0f || dt > 0.1f) dt = 0.02f;  // Clamp to reasonable range
+                if (dt <= 0.0f || dt > 0.1f) dt = 0.02f;
                 last_imu_time_ = now;
                 
-                // Skip all processing if conversation active or walk in progress
-                if (IsConversationActive() || servo_controller_.IsWalkInProgress()) {
+                // Check if we should pause processing
+                bool is_paused = IsConversationActive() || servo_controller_.IsWalkInProgress();
+                
+                // ═══════════════════════════════════════════════════
+                // DETECT TRANSITION FROM PAUSED TO ACTIVE
+                // ═══════════════════════════════════════════════════
+                if (was_paused && !is_paused) {
+                    ESP_LOGI(TAG, "IMU resuming after movement - syncing balance to stance");
+                    gyro_balance_.SyncToStance();
+                    push_reaction_.Reset();  // Reset push detection state too
+                }
+                was_paused = is_paused;
+                
+                if (is_paused) {
+                    // Still update the Mahony filter to keep orientation accurate
+                    // but don't apply any servo corrections
+                    gyro_balance_.Process(imu_data, dt);
                     vTaskDelay(interval);
                     continue;
                 }
@@ -1253,7 +1370,7 @@ private:
                 }
                 
                 // ═══════════════════════════════════════════════════
-                // GYRO BALANCE (Mahony filter based)
+                // GYRO BALANCE (Mahony filter based with anti-jitter)
                 // ═══════════════════════════════════════════════════
                 auto result = gyro_balance_.Process(imu_data, dt);
                 
@@ -1365,7 +1482,7 @@ private:
             [this](const PropertyList& properties) -> ReturnValue {
                 ESP_LOGI(TAG, "Balance enable command received");
                 gyro_balance_.Enable(true);
-                return "Gyro balance mode enabled (Mahony filter, push reaction disabled while active)";
+                return "Gyro balance mode enabled (Mahony filter + anti-jitter, push reaction disabled while active)";
             });
 
         mcp_server.AddTool("dog.balance_disable", "Disable gyro balance mode", PropertyList(), 
@@ -1605,13 +1722,15 @@ public:
         
         ESP_LOGI(TAG, "═══════════════════════════════════════════");
         ESP_LOGI(TAG, "HeySanta board initialized!");
-        ESP_LOGI(TAG, "  Gyro balance:   %s (Mahony filter)", GYRO_BALANCE_ENABLED_DEFAULT ? "ENABLED" : "DISABLED");
+        ESP_LOGI(TAG, "  Gyro balance:   %s (Mahony filter + anti-jitter)", GYRO_BALANCE_ENABLED_DEFAULT ? "ENABLED" : "DISABLED");
         ESP_LOGI(TAG, "  Push reaction:  %s", PUSH_REACTION_ENABLED_DEFAULT ? "ENABLED" : "DISABLED");
         ESP_LOGI(TAG, "  Toggle gesture: Rotate X-axis back/forth to toggle balance");
+        ESP_LOGI(TAG, "  Movement transition: pre=%dms, post=%dms, end=%dms",
+                 PRE_MOVEMENT_SETTLE_MS, POST_MOVEMENT_SETTLE_MS, MOVEMENT_END_WAIT_MS);
         ESP_LOGI(TAG, "  Use MCP tools to enable/disable features");
         ESP_LOGI(TAG, "═══════════════════════════════════════════");
     }
-    
+
     ~HeySantaBoard() {
         if (imu_task_running_) {
             imu_task_running_ = false;
@@ -1629,7 +1748,7 @@ public:
     virtual Display* GetDisplay() override {
         return display_;
     }
-    
+
     virtual Backlight* GetBacklight() override {
         static PwmBacklight backlight(DISPLAY_BACKLIGHT_PIN, DISPLAY_BACKLIGHT_OUTPUT_INVERT);
         return &backlight;
