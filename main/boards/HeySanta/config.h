@@ -36,7 +36,9 @@
 #define DISPLAY_OFFSET_Y  26
 
 #define DISPLAY_BACKLIGHT_PIN GPIO_NUM_42
-#define DISPLAY_BACKLIGHT_OUTPUT_INVERT false
+// ↓↓↓ THE FIX: must be true so IO42 stays LOW after backlight init
+//     LOW gate → P-ch FET (Q2/SI2301CDS) stays ON → camera stays powered
+#define DISPLAY_BACKLIGHT_OUTPUT_INVERT true   // was false
 
 // Add these missing definitions:
 #define DISPLAY_INVERT_COLOR    true
@@ -48,8 +50,8 @@
 
 #define LEDC_TIMER                  LEDC_TIMER_2
 #define LEDC_MODE                   LEDC_LOW_SPEED_MODE
-#define LEDC_DUTY_RES               LEDC_TIMER_13_BIT // Set duty resolution to 13 bits
-#define LEDC_FREQUENCY              (4000) // Frequency in Hertz. Set frequency at 4 kHz
+#define LEDC_DUTY_RES               LEDC_TIMER_13_BIT
+#define LEDC_FREQUENCY              (4000)
 
 #define LEDC_CHANNEL_COUNT          (4)
 #define LEDC_M1_CHANNEL_A           LEDC_CHANNEL_1
@@ -62,26 +64,25 @@
 #define LEDC_M2_CHANNEL_A_IO        (47)
 #define LEDC_M2_CHANNEL_B_IO        (48)
 
-/* Camera pins */
-#define CAMERA_PIN_PWDN -1
+/* Camera pins — identical to Lichuang */
+#define CAMERA_PIN_PWDN  -1
 #define CAMERA_PIN_RESET -1
-#define CAMERA_PIN_XCLK 5
-#define CAMERA_PIN_SIOD 1
-#define CAMERA_PIN_SIOC 2
+#define CAMERA_PIN_XCLK  5
+#define CAMERA_PIN_SIOD  1
+#define CAMERA_PIN_SIOC  2
 
-#define CAMERA_PIN_D7 9
-#define CAMERA_PIN_D6 4
-#define CAMERA_PIN_D5 6
-#define CAMERA_PIN_D4 15
-#define CAMERA_PIN_D3 17
-#define CAMERA_PIN_D2 8
-#define CAMERA_PIN_D1 18
-#define CAMERA_PIN_D0 16
+#define CAMERA_PIN_D7  9
+#define CAMERA_PIN_D6  4
+#define CAMERA_PIN_D5  6
+#define CAMERA_PIN_D4  15
+#define CAMERA_PIN_D3  17
+#define CAMERA_PIN_D2  8
+#define CAMERA_PIN_D1  18
+#define CAMERA_PIN_D0  16
 #define CAMERA_PIN_VSYNC 3
-#define CAMERA_PIN_HREF 46
-#define CAMERA_PIN_PCLK 7
+#define CAMERA_PIN_HREF  46
+#define CAMERA_PIN_PCLK  7
 
 #define XCLK_FREQ_HZ 24000000
-
 
 #endif // _BOARD_CONFIG_H_

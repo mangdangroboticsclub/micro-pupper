@@ -8,7 +8,7 @@
 #include "mcp_server.h"
 #include "audio/codecs/santa_audio_codec.h"
 #include "assets/lang_config.h"
-
+#include "esp_http_server.h"
 // STS3032 Servo Driver (local to HeySanta)
 extern "C" {
 #include "sts3032_servo.h"
@@ -31,6 +31,7 @@ extern "C" {
 #include <string.h>
 #include <cstdlib>
 #include <cmath>
+#include <img_converters.h> 
 
 #define TAG "HeySanta"
 
@@ -175,6 +176,109 @@ struct Keyframe {
 static volatile bool g_conversation_active = false;
 static volatile uint32_t g_conversation_end_time = 0;
 
+
+// Static handler - outside the class
+struct SnapCtx {
+    httpd_req_t* req;
+    size_t total;
+    bool ok;
+};
+
+static esp_err_t camera_snapshot_handler(httpd_req_t* req) {
+    camera_fb_t* fb = esp_camera_fb_get();
+    if (!fb) {
+        ESP_LOGE(TAG, "esp_camera_fb_get() returned NULL");
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Frame grab failed");
+        return ESP_FAIL;
+    }
+
+    httpd_resp_set_type(req, "image/jpeg");
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
+
+    SnapCtx ctx = { req, 0, true };
+
+    bool encode_ok = frame2jpg_cb(fb, 80,
+        [](void* arg, size_t index, const void* data, size_t len) -> unsigned int {
+            auto* c = (SnapCtx*)arg;
+            if (httpd_resp_send_chunk(c->req, (const char*)data, len) != ESP_OK) {
+                c->ok = false;
+                return 0;
+            }
+            c->total += len;
+            return len;
+        }, &ctx);
+
+    esp_camera_fb_return(fb);
+    httpd_resp_send_chunk(req, nullptr, 0);
+
+    if (!encode_ok || !ctx.ok) {
+        ESP_LOGE(TAG, "JPEG encode/send failed (encode_ok=%d send_ok=%d)", encode_ok, ctx.ok);
+        return ESP_FAIL;
+    }
+
+    ESP_LOGI(TAG, "📷 Snapshot: %zu bytes sent", ctx.total);
+    return ESP_OK;
+}
+static esp_err_t camera_stream_handler(httpd_req_t* req) {
+    httpd_resp_set_type(req, "multipart/x-mixed-replace; boundary=frame");
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
+    httpd_resp_set_hdr(req, "Connection", "keep-alive");
+
+    ESP_LOGI(TAG, "📹 Stream client connected");
+
+    while (true) {
+        camera_fb_t* fb = esp_camera_fb_get();
+        if (!fb) {
+            ESP_LOGW(TAG, "Stream: frame grab failed, retrying...");
+            vTaskDelay(pdMS_TO_TICKS(100));
+            continue;
+        }
+
+        // Convert RGB565 → JPEG
+        uint8_t* jpg_buf = nullptr;
+        size_t   jpg_len = 0;
+        bool ok = frame2jpg(fb, 80, &jpg_buf, &jpg_len);
+        esp_camera_fb_return(fb);
+
+        if (!ok || !jpg_buf) {
+            ESP_LOGW(TAG, "Stream: JPEG conversion failed");
+            vTaskDelay(pdMS_TO_TICKS(50));
+            continue;
+        }
+
+        // -- boundary + headers --
+        char part_hdr[128];
+        int hlen = snprintf(part_hdr, sizeof(part_hdr),
+            "--frame\r\n"
+            "Content-Type: image/jpeg\r\n"
+            "Content-Length: %zu\r\n\r\n", jpg_len);
+
+        esp_err_t res = httpd_resp_send_chunk(req, part_hdr, hlen);
+
+        // -- JPEG payload --
+        if (res == ESP_OK) {
+            res = httpd_resp_send_chunk(req, (const char*)jpg_buf, jpg_len);
+        }
+
+        // -- trailing CRLF --
+        if (res == ESP_OK) {
+            res = httpd_resp_send_chunk(req, "\r\n", 2);
+        }
+
+        free(jpg_buf);
+
+        if (res != ESP_OK) {
+            ESP_LOGI(TAG, "📹 Stream client disconnected");
+            break;
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(33)); // ~30 fps cap
+    }
+
+    return ESP_OK;
+}
 void SetConversationActive(bool active) {
     if (active) {
         g_conversation_active = true;
@@ -500,7 +604,7 @@ public:
     // Detect toggle gesture (rotate on X axis back and forth)
     bool ProcessToggle(float gyro_x) {
         uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
-            return false;
+        
         // Check cooldown
         if ((now - last_toggle_time_) < GYRO_BALANCE_TOGGLE_COOLDOWN_MS) {
             return false;
@@ -836,7 +940,7 @@ private:
         // Positive = leg moves backward/down, Negative = leg moves forward/up
         // ═══════════════════════════════════════════════════
         angle_fr += 0.0f;   // Front Right offset
-        angle_fl += 0.0f;   // Front Left offset (you already have this)
+        angle_fl += 0.0f;   // Front Left offset
         angle_br += 0.0f;   // Back Right offset
         angle_bl += 0.0f;   // Back Left offset
         
@@ -850,6 +954,7 @@ private:
         sts_servo_set_angle(SERVO_BR, actual_br, speed);
         sts_servo_set_angle(SERVO_BL, actual_bl, speed);
     }
+
     void PrintServoAngles() {
         float angle_fr, angle_fl, angle_br, angle_bl;
         
@@ -861,6 +966,7 @@ private:
         ESP_LOGI(TAG, "Servo angles - FR: %.1f°  FL: %.1f°  BR: %.1f°  BL: %.1f°", 
             angle_fr, angle_fl, angle_br, angle_bl);
     }
+
     // Helper to prepare for movement - waits for any pending servo commands
     void PrepareForMovement() {
         vTaskDelay(pdMS_TO_TICKS(PRE_MOVEMENT_SETTLE_MS));
@@ -923,13 +1029,11 @@ public:
         );
         
         vTaskDelay(pdMS_TO_TICKS(500));
-        PrintServoAngles();  // Add this line
+        PrintServoAngles();
     }
 
     void MoveReset() {
         ESP_LOGI(TAG, "Dog: Resetting to stance (flipped: %s)", is_flipped_ ? "yes" : "no");
-        
-        // Note: Caller should have already set conversation active
         
         if (is_flipped_) {
             ServoMoveAll(
@@ -984,7 +1088,6 @@ public:
         SetConversationActive(true);
         walk_in_progress_ = true;
         
-        // Wait for any in-flight servo commands to complete
         PrepareForMovement();
         
         Keyframe walk_keyframes[] = {
@@ -1008,7 +1111,7 @@ public:
         
         walk_in_progress_ = false;
         MoveReset();
-        SetConversationActive(false);  // Settle timer starts here
+        SetConversationActive(false);
     }
 
     void DoubleFrontFlip() {
@@ -1297,7 +1400,6 @@ private:
     static void ImuTaskWrapper(void* param) {
         static_cast<HeySantaBoard*>(param)->ImuTask();
     }
-
     void ImuTask() {
         ESP_LOGI(TAG, "IMU monitoring task started");
         ESP_LOGI(TAG, "  Push reaction: %s (delta=%.1f m/s², min=%.1f m/s², cooldown=%dms)",
@@ -1319,30 +1421,21 @@ private:
                 if (dt <= 0.0f || dt > 0.1f) dt = 0.02f;
                 last_imu_time_ = now;
                 
-                // Check if we should pause processing
                 bool is_paused = IsConversationActive() || servo_controller_.IsWalkInProgress();
                 
-                // ═══════════════════════════════════════════════════
-                // DETECT TRANSITION FROM PAUSED TO ACTIVE
-                // ═══════════════════════════════════════════════════
                 if (was_paused && !is_paused) {
                     ESP_LOGI(TAG, "IMU resuming after movement - syncing balance to stance");
                     gyro_balance_.SyncToStance();
-                    push_reaction_.Reset();  // Reset push detection state too
+                    push_reaction_.Reset();
                 }
                 was_paused = is_paused;
                 
                 if (is_paused) {
-                    // Still update the Mahony filter to keep orientation accurate
-                    // but don't apply any servo corrections
                     gyro_balance_.Process(imu_data, dt);
                     vTaskDelay(interval);
                     continue;
                 }
                 
-                // ═══════════════════════════════════════════════════
-                // TOGGLE GESTURE DETECTION (always active)
-                // ═══════════════════════════════════════════════════
                 if (gyro_balance_.ProcessToggle(imu_data.gyro_x)) {
                     bool new_state = !gyro_balance_.IsEnabled();
                     gyro_balance_.Enable(new_state);
@@ -1351,9 +1444,6 @@ private:
                     }
                 }
                 
-                // ═══════════════════════════════════════════════════
-                // PUSH REACTION (only if enabled and balance is off)
-                // ═══════════════════════════════════════════════════
                 if (push_reaction_.IsEnabled() && !gyro_balance_.IsEnabled()) {
                     PushReactionController::PushDirection push = push_reaction_.ProcessAccel(imu_data.accel_x);
                     
@@ -1369,9 +1459,6 @@ private:
                     }
                 }
                 
-                // ═══════════════════════════════════════════════════
-                // GYRO BALANCE (Mahony filter based with anti-jitter)
-                // ═══════════════════════════════════════════════════
                 auto result = gyro_balance_.Process(imu_data, dt);
                 
                 if (result.should_update) {
@@ -1384,7 +1471,18 @@ private:
         ESP_LOGI(TAG, "IMU monitoring task stopped");
         vTaskDelete(NULL);
     }
-
+    void PrintMemoryStats() {
+        ESP_LOGI(TAG, "═══ MEMORY REPORT ═════════════════════════════");
+        ESP_LOGI(TAG, "  Internal free:     %.1f KB",
+            heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024.0f);
+        ESP_LOGI(TAG, "  Internal min ever: %.1f KB  <-- watch this",
+            heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL) / 1024.0f);
+        ESP_LOGI(TAG, "  PSRAM free:        %.1f KB",
+            heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024.0f);
+        ESP_LOGI(TAG, "  DMA free:          %.1f KB",
+            heap_caps_get_free_size(MALLOC_CAP_DMA) / 1024.0f);
+        ESP_LOGI(TAG, "═══════════════════════════════════════════════");
+    }
     void InitializeTools() {
         auto& mcp_server = McpServer::GetInstance();
         
@@ -1628,6 +1726,7 @@ private:
 
     void InitializeSt7735Display() {
         ESP_LOGI(TAG, "Initializing ST7735 display...");
+        vTaskDelay(pdMS_TO_TICKS(200));
         
         esp_lcd_panel_io_handle_t panel_io = nullptr;
         esp_lcd_panel_handle_t panel = nullptr;
@@ -1636,7 +1735,7 @@ private:
         io_config.cs_gpio_num = GPIO_NUM_NC;
         io_config.dc_gpio_num = GPIO_NUM_39;
         io_config.spi_mode = DISPLAY_SPI_MODE;
-        io_config.pclk_hz = 20 * 1000 * 1000;
+        io_config.pclk_hz = 10 * 1000 * 1000;
         io_config.trans_queue_depth = 10;
         io_config.lcd_cmd_bits = 8;
         io_config.lcd_param_bits = 8;
@@ -1651,11 +1750,14 @@ private:
         
         ESP_ERROR_CHECK(esp_lcd_new_panel_st7735(panel_io, &panel_config, &panel));
         ESP_ERROR_CHECK(esp_lcd_panel_reset(panel));
+        vTaskDelay(pdMS_TO_TICKS(150)); 
         ESP_ERROR_CHECK(esp_lcd_panel_init(panel));
+        vTaskDelay(pdMS_TO_TICKS(50));
         ESP_ERROR_CHECK(esp_lcd_panel_set_gap(panel, DISPLAY_OFFSET_X, DISPLAY_OFFSET_Y));
         ESP_ERROR_CHECK(esp_lcd_panel_swap_xy(panel, DISPLAY_SWAP_XY));
         ESP_ERROR_CHECK(esp_lcd_panel_mirror(panel, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y));
         ESP_ERROR_CHECK(esp_lcd_panel_invert_color(panel, DISPLAY_INVERT_COLOR));
+        vTaskDelay(pdMS_TO_TICKS(50)); 
         ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel, true));
         
         ESP_LOGI(TAG, "✓ Display initialized");
@@ -1663,6 +1765,10 @@ private:
     }
 
     void InitializeCamera() {
+        gpio_set_direction(GPIO_NUM_42, GPIO_MODE_OUTPUT);
+        gpio_set_level(GPIO_NUM_42, 0);
+        vTaskDelay(pdMS_TO_TICKS(150));
+
         camera_config_t config = {};
         config.ledc_channel = LEDC_CHANNEL_5;
         config.ledc_timer = LEDC_TIMER_1;
@@ -1687,11 +1793,19 @@ private:
         config.pixel_format = PIXFORMAT_RGB565;
         config.frame_size = FRAMESIZE_VGA;
         config.jpeg_quality = 12;
-        config.fb_count = 1;
+        config.fb_count = 3;
         config.fb_location = CAMERA_FB_IN_PSRAM;
-        config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
+        config.grab_mode = CAMERA_GRAB_LATEST;
 
         camera_ = new Esp32Camera(config);
+    }
+    void TakeTestPhoto() {
+        camera_fb_t* fb = esp_camera_fb_get();
+        if (fb) {
+            ESP_LOGI(TAG, "📸 Test photo: %d bytes", (int)fb->len);
+            ESP_LOG_BUFFER_HEX_LEVEL(TAG, fb->buf, 256, ESP_LOG_INFO); // First 256 bytes
+            esp_camera_fb_return(fb);
+        }
     }
 
 public:
@@ -1700,12 +1814,31 @@ public:
         InitializeSpi();
         InitializeSt7735Display();
         InitializeButtons();
-        // InitializeCamera();
-        servo_controller_.Initialize();
+        InitializeCamera();
+        
+        vTaskDelay(pdMS_TO_TICKS(500));
 
+        // Camera test
+        camera_fb_t* test_fb = esp_camera_fb_get();
+        if (test_fb) {
+            uint8_t* pixels = test_fb->buf;
+            size_t center = (test_fb->height / 2) * test_fb->width * 2;
+            ESP_LOGI(TAG, "✓ Camera frame: %zu bytes (%dx%d)",
+                    test_fb->len, test_fb->width, test_fb->height);
+            ESP_LOGI(TAG, "  Center pixels (raw RGB565): %02X %02X %02X %02X %02X %02X",
+                    pixels[center],   pixels[center+1],
+                    pixels[center+2], pixels[center+3],
+                    pixels[center+4], pixels[center+5]);
+            ESP_LOGI(TAG, "  All zeros = camera broken, varied values = camera working");
+            esp_camera_fb_return(test_fb);
+        } else {
+            ESP_LOGE(TAG, "✗ Camera frame grab FAILED - check power/wiring");
+        }
+        TakeTestPhoto();
+        
+        servo_controller_.Initialize();
         vTaskDelay(pdMS_TO_TICKS(500));
         
-        // Initialize gyro balance controller
         gyro_balance_.Initialize();
         
         if (imu_controller_.Initialize(i2c_bus_)) {
@@ -1718,6 +1851,8 @@ public:
         }
         
         InitializeTools();
+        // At the end of HeySantaBoard constructor, after InitializeTools()
+        // StartCameraHttpServer();
         GetBacklight()->RestoreBrightness();
         
         ESP_LOGI(TAG, "═══════════════════════════════════════════");
@@ -1729,6 +1864,7 @@ public:
                  PRE_MOVEMENT_SETTLE_MS, POST_MOVEMENT_SETTLE_MS, MOVEMENT_END_WAIT_MS);
         ESP_LOGI(TAG, "  Use MCP tools to enable/disable features");
         ESP_LOGI(TAG, "═══════════════════════════════════════════");
+        PrintMemoryStats();  // <-- ADD THIS
     }
 
     ~HeySantaBoard() {
@@ -1757,6 +1893,45 @@ public:
     virtual Camera* GetCamera() override {
         return camera_;
     }
+    // ADD THIS:
+    virtual void StartCameraHttpServer() override {
+        httpd_config_t config = HTTPD_DEFAULT_CONFIG();
+        config.server_port        = 80;
+        config.lru_purge_enable   = true;
+        config.max_open_sockets   = 5;       // bumped: snapshot + stream + spare
+        config.stack_size         = 8192;    // stream loop needs more stack
+        config.recv_wait_timeout  = 10;      // seconds
+        config.send_wait_timeout  = 10;
+
+        httpd_handle_t server = nullptr;
+        if (httpd_start(&server, &config) != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to start HTTP server");
+            return;
+        }
+
+        // -- snapshot --
+        httpd_uri_t snapshot_uri = {
+            .uri      = "/snapshot",
+            .method   = HTTP_GET,
+            .handler  = camera_snapshot_handler,
+            .user_ctx = nullptr,
+        };
+        httpd_register_uri_handler(server, &snapshot_uri);
+
+        // -- stream --
+        httpd_uri_t stream_uri = {
+            .uri      = "/stream",
+            .method   = HTTP_GET,
+            .handler  = camera_stream_handler,
+            .user_ctx = nullptr,
+        };
+        httpd_register_uri_handler(server, &stream_uri);
+
+        std::string ip = WifiStation::GetInstance().GetIpAddress();
+        ESP_LOGI(TAG, "📷 Snapshot : http://%s/snapshot", ip.c_str());
+        ESP_LOGI(TAG, "📹 Stream   : http://%s/stream",   ip.c_str());
+    }
+    
 };
 
 DECLARE_BOARD(HeySantaBoard);

@@ -365,7 +365,7 @@ void Application::Start() {
 
     /* Wait for the network to be re`ady */
     board.StartNetwork();
-
+    board.StartCameraHttpServer(); 
     // Update the status bar immediately to show the network state
     display->UpdateStatusBar(true);
 
@@ -1222,12 +1222,33 @@ void Application::SetBleConnectionState(bool connected) {
 
 // Add these methods for web control panel support
 void Application::SetWebControlPanelActive(bool active) {
-    // Force web control panel to always be false
-    web_control_panel_active_ = false;
-    ESP_LOGI(TAG, "Web control panel forced to inactive (always false)");
-    
-    // Don't execute any of the original logic since we're forcing it false
-    return;
+    web_control_panel_active_ = active;
+    ESP_LOGI(TAG, "Web control panel: %s", active ? "active" : "inactive");
+
+    if (active) {
+        // Disable STT timeout while web panel is controlling the device
+        last_stt_time_ = std::chrono::steady_clock::time_point{};
+
+        // Make sure the audio channel is open
+        Schedule([this]() {
+            if (!protocol_->IsAudioChannelOpened()) {
+                SetDeviceState(kDeviceStateConnecting);
+                if (!protocol_->OpenAudioChannel()) {
+                    web_control_panel_active_ = false;
+                    return;
+                }
+            }
+            SetDeviceState(kDeviceStateListening);
+        });
+    } else {
+        // Resume normal idle behavior
+        Schedule([this]() {
+            if (protocol_ && protocol_->IsAudioChannelOpened()) {
+                protocol_->CloseAudioChannel();
+            }
+            SetDeviceState(kDeviceStateIdle);
+        });
+    }
 }
 
 bool Application::IsWebControlPanelActive() const {
